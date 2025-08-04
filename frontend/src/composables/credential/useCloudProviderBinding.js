@@ -21,6 +21,8 @@ import {
   isDnsBinding as _isDnsBinding,
   isSecretBinding as _isSecretBinding,
   isCredentialsBinding as _isCredentialsBinding,
+  isSecret as _isSecret,
+  isWorkloadIdentity as _isWorkloadIdentity,
   credentialName as _credentialName,
   credentialNamespace as _credentialNameSpace,
   credentialRef as _credentialRef,
@@ -59,12 +61,13 @@ export const useCloudProviderBinding = (binding, options = {}) => {
     _isCredentialsBinding(binding.value),
   )
   const isSecret = computed(() =>
+    _isSecret(binding.value) ||
     isSecretBinding.value ||
     binding.value?.credentialsRef?.kind === 'Secret',
   )
   const isWorkloadIdentity = computed(() =>
-    isCredentialsBinding.value &&
-    binding.value?.credentialsRef?.kind === 'WorkloadIdentity',
+    _isWorkloadIdentity(binding.value) ||
+    (isCredentialsBinding.value && binding.value?.credentialsRef?.kind === 'WorkloadIdentity'),
   )
   const isInfrastructureBinding = computed(() =>
     _isInfrastructureBinding(binding.value, sortedProviderTypeList.value),
@@ -136,13 +139,10 @@ export const useCloudProviderBinding = (binding, options = {}) => {
       return shoots.length
     }
     if (isDnsBinding.value) {
-      if (isSharedCredential.value === undefined) {
-        return 0 // dns extension currently supports secrets only (no bindings)
-      }
       const byProvider = providers =>
         some(providers, ['secretName', credentialName.value])
       const byResource = resources =>
-        some(resources, { resourceRef: { kind: 'Secret', name: credentialName.value } })
+        some(resources, { resourceRef: { kind: credentialKind.value, name: credentialName.value } })
 
       let count = 0
       for (const shoot of shootList.value) {

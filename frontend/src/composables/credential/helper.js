@@ -14,6 +14,12 @@ export function isSecretBinding (binding) {
 export function isCredentialsBinding (binding) {
   return binding?.kind === 'CredentialsBinding'
 }
+export function isSecret (binding) {
+  return binding?.kind === 'Secret'
+}
+export function isWorkloadIdentity (binding) {
+  return binding?.kind === 'WorkloadIdentity'
+}
 
 export function credentialRef (binding) {
   if (isSecretBinding(binding)) {
@@ -21,6 +27,13 @@ export function credentialRef (binding) {
   }
   if (isCredentialsBinding(binding)) {
     return binding?.credentialsRef
+  }
+  if (isSecret(binding) || isWorkloadIdentity(binding)) {
+    return {
+      namespace: binding?.metadata?.namespace,
+      name: binding?.metadata?.name,
+      kind: binding?.kind,
+    }
   }
   return undefined
 }
@@ -45,6 +58,12 @@ export function credentialKind (binding) {
   }
   if (isCredentialsBinding(binding)) {
     return binding?.credentialsRef?.kind
+  }
+  if (isSecret(binding)) {
+    return 'Secret'
+  }
+  if (isWorkloadIdentity(binding)) {
+    return 'WorkloadIdentity'
   }
   return undefined
 }

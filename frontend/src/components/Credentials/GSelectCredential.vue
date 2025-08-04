@@ -186,7 +186,7 @@ export default {
     allowedBindings () {
       return this.cloudProviderBindingList
         ?.filter(binding => {
-          const name = binding.secretRef?.name || binding.cedentialsRef?.name
+          const name = binding.secretRef?.name || binding.credentialsRef?.name || binding.metadata?.name
           return !this.notAllowedSecretNames.includes(name)
         })
     },

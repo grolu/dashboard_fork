@@ -17,21 +17,27 @@ export async function list ({ user, params }) {
   const [
     { items: secretBindings },
     { items: credentialsBindings },
-    { items: secretBindingSecrets },
-    { items: credentialsBindingSecrets },
+    { items: allSecrets },
     { items: workloadIdentities },
   ] = await Promise.all([
     client['core.gardener.cloud'].secretbindings.list(bindingNamespace),
     client['security.gardener.cloud'].credentialsbindings.list(bindingNamespace),
-    client.core.secrets.list(bindingNamespace, { labelSelector: 'reference.gardener.cloud/secretbinding=true' }),
-    client.core.secrets.list(bindingNamespace, { labelSelector: 'reference.gardener.cloud/credentialsbinding=true' }),
+    client.core.secrets.list(bindingNamespace),
     client['security.gardener.cloud'].workloadidentities.list(bindingNamespace),
   ])
 
-  const secrets = [
+  const providerPrefix = 'provider.shoot.gardener.cloud/'
+  const hasLabel = labels => Object.entries(labels || {}).some(([k, v]) => v === 'true' && k.startsWith(providerPrefix))
+
+  const secretBindingSecrets = allSecrets.filter(({ metadata }) => metadata?.labels?.['reference.gardener.cloud/secretbinding'] === 'true')
+  const credentialsBindingSecrets = allSecrets.filter(({ metadata }) => metadata?.labels?.['reference.gardener.cloud/credentialsbinding'] === 'true')
+  const dnsSecrets = allSecrets.filter(({ metadata }) => hasLabel(metadata.labels))
+
+  const secrets = _.uniqBy([
     ...secretBindingSecrets,
     ...credentialsBindingSecrets,
-  ]
+    ...dnsSecrets,
+  ], 'metadata.uid')
   const quotas = _
     .chain([
       ...secretBindings,
@@ -55,6 +61,12 @@ export async function create ({ user, params }) {
 
   let { secret, binding } = params
   const secretNamespace = secret.metadata.namespace
+
+  if (!binding) {
+    secret = await client.core.secrets.create(secretNamespace, secret)
+    return { secret }
+  }
+
   const bindingNamespace = binding.metadata.namespace
   const kind = binding.kind
 
@@ -124,6 +136,12 @@ export async function remove ({ user, params }) {
     binding = await client['security.gardener.cloud'].credentialsbindings.get(bindingNamespace, bindingName)
     secretRefNamespace = binding.credentialsRef.namespace
     secretRefName = binding.credentialsRef.name
+  } else if (bindingKind === 'Secret') {
+    await client.core.secrets.delete(bindingNamespace, bindingName)
+    return
+  } else if (bindingKind === 'WorkloadIdentity') {
+    await client['security.gardener.cloud'].workloadidentities.delete(bindingNamespace, bindingName)
+    return
   } else {
     throw createError(422, `Unknown binding ${bindingKind}`)
   }

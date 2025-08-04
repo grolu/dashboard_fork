@@ -111,7 +111,7 @@ exports[`composables > useShootDns > should delete extension dns providers > one
         "kind": "DNSConfig",
         "providers": [
           {
-            "secretName": undefined,
+            "secretName": "shoot-dns-service-dual-dns-secret",
             "type": "aws-route53",
           },
         ],
@@ -120,7 +120,16 @@ exports[`composables > useShootDns > should delete extension dns providers > one
       "type": "shoot-dns-service",
     },
   ],
-  "resources": [],
+  "resources": [
+    {
+      "name": "shoot-dns-service-dual-dns-secret",
+      "resourceRef": {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "name": "dual-dns-secret",
+      },
+    },
+  ],
 }
 `;
 
@@ -137,7 +146,7 @@ exports[`composables > useShootDns > should delete extension dns providers > two
             "type": "aws-route53",
           },
           {
-            "secretName": undefined,
+            "secretName": "shoot-dns-service-dual-dns-secret",
             "type": "aws-route53",
           },
         ],
@@ -153,6 +162,14 @@ exports[`composables > useShootDns > should delete extension dns providers > two
         "apiVersion": "v1",
         "kind": "Secret",
         "name": "aws-route53-secret",
+      },
+    },
+    {
+      "name": "shoot-dns-service-dual-dns-secret",
+      "resourceRef": {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "name": "dual-dns-secret",
       },
     },
   ],

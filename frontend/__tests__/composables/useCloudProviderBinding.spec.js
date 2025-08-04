@@ -77,7 +77,7 @@ describe('useCloudProviderBinding composable', () => {
   function findBindingRef (name) {
     return ref(
       find(
-        [...global.fixtures.credentials.secretBindings, ...global.fixtures.credentials.credentialsBindings],
+        credentialStore.cloudProviderBindingList,
         b => b.metadata.name === name,
       ),
     )
@@ -151,9 +151,9 @@ describe('useCloudProviderBinding composable', () => {
     expect(bindingComposable.credentialUsageCount.value).toBe(1)
   })
 
-  it('counts shoots referencing dns credentialsbinding', () => {
-    const credentialsBindingRef = findBindingRef('aws-route53-credentialsbinding')
-    const bindingComposable = useCloudProviderBinding(credentialsBindingRef)
+  it('counts shoots referencing dns credential', () => {
+    const dnsSecretRef = findBindingRef('aws-route53-secret')
+    const bindingComposable = useCloudProviderBinding(dnsSecretRef)
     expect(bindingComposable.isDnsBinding.value).toBe(true)
     expect(bindingComposable.credentialUsageCount.value).toBe(2)
   })
@@ -178,5 +178,11 @@ describe('useCloudProviderBinding composable', () => {
     secretBindingRef.value.metadata.deletionTimestamp = new Date().toISOString()
     const bindingComposable = useCloudProviderBinding(secretBindingRef)
     expect(bindingComposable.isMarkedForDeletion.value).toBe(true)
+  })
+
+  it('creates virtual binding for each dns provider label', () => {
+    const bindings = credentialStore.cloudProviderBindingList.filter(b => b.metadata.name === 'dual-dns-secret')
+    expect(bindings).toHaveLength(2)
+    expect(bindings.map(b => b.provider.type).sort()).toEqual(['aws-route53', 'azure-dns'])
   })
 })

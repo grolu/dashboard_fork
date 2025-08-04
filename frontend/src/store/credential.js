@@ -34,6 +34,12 @@ function namespaceNameKey ({ namespace, name }) {
   return `${namespace}/${name}`
 }
 
+const providerPrefix = 'provider.shoot.gardener.cloud/'
+const providerTypesFromLabels = labels =>
+  Object.entries(labels || {})
+    .filter(([key, value]) => value === 'true' && key.startsWith(providerPrefix))
+    .map(([key]) => key.slice(providerPrefix.length))
+
 export const useCredentialStore = defineStore('credential', () => {
   const api = useApi()
   const appStore = useAppStore()
@@ -84,6 +90,19 @@ export const useCredentialStore = defineStore('credential', () => {
       const key = namespaceNameKey(item.metadata)
       item.kind = 'Secret' // ensure kind is set (might not be set if objects are retrieved using list call)
       set(state.secrets, [key], item)
+
+      providerTypesFromLabels(item.metadata.labels).forEach(type => {
+        const bindingKey = `${key}/${type}`
+        set(state.credentialsBindings, [bindingKey], {
+          kind: 'Secret',
+          metadata: { ...item.metadata, uid: `${item.metadata.uid}-${type}` },
+          provider: { type },
+          secretRef: {
+            name: item.metadata.name,
+            namespace: item.metadata.namespace,
+          },
+        })
+      })
     })
 
     credentialsBindings?.forEach(item => {
@@ -96,6 +115,22 @@ export const useCredentialStore = defineStore('credential', () => {
       const key = namespaceNameKey(item.metadata)
       item.kind = 'WorkloadIdentity' // ensure kind is set (might not be set if objects are retrieved using list call)
       set(state.workloadIdentities, [key], item)
+
+      providerTypesFromLabels(item.metadata.labels).forEach(type => {
+        const bindingKey = `${key}/${type}`
+        set(state.credentialsBindings, [bindingKey], {
+          kind: 'WorkloadIdentity',
+          apiVersion: item.apiVersion,
+          metadata: { ...item.metadata, uid: `${item.metadata.uid}-${type}` },
+          provider: { type },
+          credentialsRef: {
+            name: item.metadata.name,
+            namespace: item.metadata.namespace,
+            kind: 'WorkloadIdentity',
+            apiVersion: item.apiVersion,
+          },
+        })
+      })
     })
 
     quotas?.forEach(item => {
@@ -105,10 +140,10 @@ export const useCredentialStore = defineStore('credential', () => {
   }
 
   const cloudProviderBindingList = computed(() => {
-    const secretBindings = Object.values(state.secretBindings)
-    const credentialsBindings = Object.values(state.credentialsBindings)
-
-    return [...secretBindings, ...credentialsBindings]
+    return [
+      ...Object.values(state.secretBindings),
+      ...Object.values(state.credentialsBindings),
+    ]
   })
 
   const quotaList = computed(() => {
@@ -122,9 +157,11 @@ export const useCredentialStore = defineStore('credential', () => {
   }
 
   async function updateCredential (params) {
-    const { data: { secret } } = await api.updateCloudProviderCredential({ secret: params.secret })
-    _updateCloudProviderCredential({ secret })
-    appStore.setSuccess(`Cloud Provider credential ${params.binding.metadata.name} updated`)
+    const { binding, secret } = params
+    const { data: { secret: updatedSecret } } = await api.updateCloudProviderCredential({ secret })
+    _updateCloudProviderCredential({ secret: updatedSecret })
+    const name = binding?.metadata?.name || secret.metadata.name
+    appStore.setSuccess(`Cloud Provider credential ${name} updated`)
   }
 
   async function deleteCredential ({ bindingKind, bindingNamespace, bindingName }) {
@@ -151,7 +188,7 @@ export const useCredentialStore = defineStore('credential', () => {
   )
 
   const credentialsBindingList = computed(() =>
-    Object.values(state.credentialsBindings),
+    Object.values(state.credentialsBindings).filter(({ kind }) => kind === 'CredentialsBinding'),
   )
 
   function getSecret ({ namespace, name }) {
@@ -179,6 +216,28 @@ export const useCredentialStore = defineStore('credential', () => {
     if (secret) {
       const key = namespaceNameKey(secret.metadata)
       set(state.secrets, [key], secret)
+
+      // refresh virtual bindings for this secret
+      Object.keys(state.credentialsBindings).forEach(k => {
+        if (k === key || k.startsWith(`${key}/`)) {
+          const item = state.credentialsBindings[k]
+          if (item.kind === 'Secret') {
+            delete state.credentialsBindings[k]
+          }
+        }
+      })
+      providerTypesFromLabels(secret.metadata.labels).forEach(type => {
+        const bindingKey = `${key}/${type}`
+        set(state.credentialsBindings, [bindingKey], {
+          kind: 'Secret',
+          metadata: { ...secret.metadata, uid: `${secret.metadata.uid}-${type}` },
+          provider: { type },
+          secretRef: {
+            name: secret.metadata.name,
+            namespace: secret.metadata.namespace,
+          },
+        })
+      })
     }
 
     // no update logic for quotas as they currently cannot be updated using the dashboard

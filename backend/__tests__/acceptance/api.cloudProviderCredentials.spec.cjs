@@ -50,7 +50,6 @@ describe('api', function () {
       mockRequest.mockImplementationOnce(fixtures.secretbindings.mocks.list())
       mockRequest.mockImplementationOnce(fixtures.credentialsbindings.mocks.list())
       mockRequest.mockImplementationOnce(fixtures.secrets.mocks.list())
-      mockRequest.mockImplementationOnce(fixtures.secrets.mocks.list())
       mockRequest.mockImplementationOnce(fixtures.workloadidentities.mocks.list())
 
       const params = {
@@ -64,7 +63,7 @@ describe('api', function () {
         .expect('content-type', /json/)
         .expect(200)
 
-      expect(mockRequest).toHaveBeenCalledTimes(5)
+      expect(mockRequest).toHaveBeenCalledTimes(4)
       expect(mockRequest.mock.calls).toMatchSnapshot()
 
       expect(res.body).toMatchSnapshot()
@@ -73,7 +72,6 @@ describe('api', function () {
     it('should return no cloudProvider credentials', async function () {
       mockRequest.mockImplementationOnce(fixtures.secretbindings.mocks.list())
       mockRequest.mockImplementationOnce(fixtures.credentialsbindings.mocks.list())
-      mockRequest.mockImplementationOnce(fixtures.secrets.mocks.list())
       mockRequest.mockImplementationOnce(fixtures.secrets.mocks.list())
       mockRequest.mockImplementationOnce(fixtures.workloadidentities.mocks.list())
 
@@ -89,7 +87,7 @@ describe('api', function () {
         .expect('content-type', /json/)
         .expect(200)
 
-      expect(mockRequest).toHaveBeenCalledTimes(5)
+      expect(mockRequest).toHaveBeenCalledTimes(4)
       expect(mockRequest.mock.calls).toMatchSnapshot()
 
       expect(res.body).toMatchSnapshot()

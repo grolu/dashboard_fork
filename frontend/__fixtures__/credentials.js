@@ -14,6 +14,7 @@ function createProviderCredentials (type, options = {}) {
     typeSecret = !typeWorkloadIdentity,
     createSecretBinding = typeSecret,
     createCredentialsBinding = true,
+    providerLabel = false,
   } = options
   const secretBindingName = `${name}-secretbinding`
   const credentialsBindingName = `${name}-credentialsbinding`
@@ -103,6 +104,9 @@ function createProviderCredentials (type, options = {}) {
         secret: 'cw==',
       },
     }
+    if (providerLabel) {
+      secret.metadata.labels = { [`provider.shoot.gardener.cloud/${type}`]: 'true' }
+    }
   }
 
   let workloadIdentity
@@ -119,6 +123,9 @@ function createProviderCredentials (type, options = {}) {
           type: 'foo-infra',
         },
       },
+    }
+    if (providerLabel) {
+      workloadIdentity.metadata.labels = { [`provider.shoot.gardener.cloud/${type}`]: 'true' }
     }
   }
 
@@ -150,8 +157,24 @@ const credentials = [
   createProviderCredentials('openstack'),
   createProviderCredentials('gcp'),
   createProviderCredentials('ironcore'),
-  createProviderCredentials('aws-route53'),
-  createProviderCredentials('azure-dns'),
+  createProviderCredentials('aws-route53', { createSecretBinding: false, createCredentialsBinding: false, providerLabel: true }),
+  createProviderCredentials('azure-dns', { createSecretBinding: false, createCredentialsBinding: false, providerLabel: true }),
+  {
+    secret: {
+      metadata: {
+        namespace: 'garden-test',
+        name: 'dual-dns-secret',
+        uid: 'secret-dual-dns-uid',
+        labels: {
+          'provider.shoot.gardener.cloud/aws-route53': 'true',
+          'provider.shoot.gardener.cloud/azure-dns': 'true',
+        },
+      },
+      data: {
+        secret: 'cw==',
+      },
+    },
+  },
 ]
 
 const secretBindings = credentials.map(item => item.secretBinding).filter(Boolean)

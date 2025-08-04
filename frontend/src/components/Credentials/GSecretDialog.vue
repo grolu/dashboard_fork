@@ -138,7 +138,7 @@ import {
   required,
   maxLength,
 } from '@vuelidate/validators'
-import { toRef } from 'vue'
+import { toRef, computed } from 'vue'
 
 import { useCredentialStore } from '@/store/credential'
 import { useGardenerExtensionStore } from '@/store/gardenerExtension'
@@ -152,6 +152,8 @@ import { useSecretContext } from '@/composables/credential/useSecretContext'
 import { useSecretBindingContext } from '@/composables/credential/useSecretBindingContext'
 import { useCredentialsBindingContext } from '@/composables/credential/useCredentialsBindingContext'
 import { useCloudProviderBinding } from '@/composables/credential/useCloudProviderBinding'
+import { useGardenerExtensionStore } from '@/store/gardenerExtension'
+import { storeToRefs } from 'pinia'
 
 import {
   messageFromErrors,
@@ -209,6 +211,8 @@ export default {
   ],
   setup (props) {
     const binding = toRef(props, 'binding')
+    const gardenerExtensionStore = useGardenerExtensionStore()
+    const { dnsProviderTypes } = storeToRefs(gardenerExtensionStore)
     const {
       isOrphanedCredential,
       credentialUsageCount,
@@ -220,8 +224,19 @@ export default {
       credential,
     } = useCloudProviderBinding(binding)
 
+    const isDnsProviderType = dnsProviderTypes.value.includes(props.providerType)
+
     let bindingContext
-    if (!props.binding) {
+    if (!props.binding && isDnsProviderType) {
+      bindingContext = {
+        createBindingManifest: () => {},
+        setBindingManifest: () => {},
+        bindingManifest: undefined,
+        bindingName: undefined,
+        bindingProviderType: undefined,
+        bindingRef: undefined,
+      }
+    } else if (!props.binding) {
       // New binding always created as type 'CredentialsBinding'
       bindingContext = useCredentialsBindingContext()
     } else if (isSecretBinding) {
@@ -284,7 +299,7 @@ export default {
       maxLength: maxLength(128),
       lowerCaseAlphaNumHyphen,
       noStartEndHyphen,
-      unique: unique(this.isDnsBinding ? 'dnsSecretNames' : 'infrastructureSecretNames'),
+      unique: unique(this.isDnsProvider ? 'dnsSecretNames' : 'infrastructureSecretNames'),
     }
     rules.name = withFieldName('Secret Name', nameRules)
 
@@ -311,6 +326,12 @@ export default {
     dnsSecretNames () {
       return this.dnsBindingList.map(item => item.metadata.name)
     },
+    isDnsProvider () {
+      if (this.binding) {
+        return this.isDnsBinding
+      }
+      return this.dnsProviderTypes.includes(this.providerType)
+    },
     isCreateMode () {
       return !this.binding
     },
@@ -333,12 +354,14 @@ export default {
     },
     name: {
       get () {
-        return this.bindingName
+        return this.bindingName ?? this.secretName
       },
       set (value) {
         this.bindingName = value
         this.secretName = value
-        this.bindingRef.name = value
+        if (this.bindingRef) {
+          this.bindingRef.name = value
+        }
       },
     },
   },
@@ -384,24 +407,41 @@ export default {
       }
     },
     save () {
-      if (this.isCreateMode) {
+      if (this.isCreateMode && this.bindingManifest) {
         return this.createCredential({ secret: this.secretManifest, binding: this.bindingManifest })
-      } else {
-        return this.updateCredential({ secret: this.secretManifest, binding: this.bindingManifest })
       }
+      return this.updateCredential({ secret: this.secretManifest, binding: this.binding })
     },
     reset () {
       this.v$.$reset()
 
       if (this.isCreateMode) {
-        this.createBindingManifest()
-        this.createSecretManifest()
-        this.name = `my-${this.providerType}-secret`
-        this.bindingProviderType = this.providerType
+        if (this.isDnsProvider) {
+          const labels = {
+            [`provider.shoot.gardener.cloud/${this.providerType}`]: 'true',
+          }
+          this.createSecretManifest({ labels })
+          this.name = `my-${this.providerType}-secret`
+        } else {
+          this.createBindingManifest()
+          this.createSecretManifest()
+          this.name = `my-${this.providerType}-secret`
+          this.bindingProviderType = this.providerType
+        }
 
         setDelayedInputFocus(this, 'name')
       } else {
-        if (this.credential) {
+        if (this.binding && (this.binding.kind === 'Secret' || this.binding.kind === 'WorkloadIdentity')) {
+          if (this.credential) {
+            this.setSecretManifest(this.credential)
+          } else {
+            const name = this.credentialName
+            const labels = {
+              [`provider.shoot.gardener.cloud/${this.binding.provider.type}`]: 'true',
+            }
+            this.createSecretManifest({ name, labels })
+          }
+        } else if (this.credential) {
           this.setBindingManifest(this.binding)
           this.setSecretManifest(this.credential)
         } else {

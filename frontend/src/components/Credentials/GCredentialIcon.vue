@@ -28,6 +28,8 @@ import {
 import {
   isCredentialsBinding,
   isSecretBinding,
+  isSecret,
+  isWorkloadIdentity,
 } from '@/composables/credential/helper'
 
 const props = defineProps({
@@ -38,8 +40,11 @@ const props = defineProps({
 const binding = toRef(props, 'binding')
 
 const icon = computed(() => {
-  if (isSecretBinding(binding.value)) {
+  if (isSecret(binding.value) || isSecretBinding(binding.value)) {
     return 'mdi-key'
+  }
+  if (isWorkloadIdentity(binding.value)) {
+    return 'mdi-id-card'
   }
   if (isCredentialsBinding(binding.value)) {
     if (binding.value.credentialsRef.kind === 'Secret') {
@@ -53,6 +58,12 @@ const icon = computed(() => {
 })
 
 const tooltip = computed(() => {
+  if (isSecret(binding.value)) {
+    return 'Secret'
+  }
+  if (isWorkloadIdentity(binding.value)) {
+    return 'WorkloadIdentity'
+  }
   if (isSecretBinding(binding.value)) {
     return 'Secret (SecretBinding)'
   }
