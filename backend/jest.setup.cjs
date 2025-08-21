@@ -59,10 +59,13 @@ function createSocketAgent (cache) {
       await new Promise(resolve => server.close(resolve))
       await new Promise(resolve => io.close(resolve))
     },
-    async connect ({ cookie, user, connected = true } = {}) {
+    async connect ({ cookie, user, connected = true, originHeader } = {}) {
+      if (!server.address()) {
+        await pEvent(server, 'listening', { timeout: 1000 })
+      }
       const { address: hostname, port } = server.address()
       const origin = `http://[${hostname}]:${port}`
-      const extraHeaders = {}
+      const extraHeaders = { origin: originHeader ?? origin }
       if (cookie) {
         extraHeaders.cookie = cookie
       } else if (user) {

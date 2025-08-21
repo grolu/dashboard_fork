@@ -72,6 +72,7 @@ describe('config', function () {
       const environmentVariables = {
         API_SERVER_URL: 'apiServerUrl',
         SESSION_SECRET: 'secret',
+        IO_ALLOWED_ORIGINS: 'https://foo.example.org,https://bar.example.org',
       }
 
       let readFileSyncSpy
@@ -134,6 +135,18 @@ describe('config', function () {
         expect(gardener.readConfig.mock.calls[0]).toEqual([filename])
         expect(config.sessionSecret).toBe(env.SESSION_SECRET)
         expect(config.logLevel).toBe('debug')
+      })
+
+      it('should read allowed origins from environment variables', function () {
+        const env = Object.assign({
+          NODE_ENV: 'test',
+        }, environmentVariables)
+
+        const config = gardener.loadConfig(undefined, { env })
+        expect(config.io.allowedOrigins).toEqual([
+          'https://foo.example.org',
+          'https://bar.example.org',
+        ])
       })
 
       it('should return the config with oidc.ca overridden by environment variables', function () {

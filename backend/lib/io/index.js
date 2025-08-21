@@ -8,11 +8,34 @@ import { Server } from 'socket.io'
 import logger from '../logger/index.js'
 import helper from './helper.js'
 import dispatcher from './dispatcher.js'
+import config from '../config/index.js'
 
 function init (httpServer, cache) {
+  const allowedOriginsConfig = config.io?.allowedOrigins
+  const allowedOrigins = Array.isArray(allowedOriginsConfig)
+    ? allowedOriginsConfig
+    : typeof allowedOriginsConfig === 'string'
+      ? allowedOriginsConfig.split(',').map(s => s.trim()).filter(Boolean)
+      : undefined
+
   const io = new Server(httpServer, {
     path: '/api/events',
     serveClient: false,
+    transports: ['websocket'],
+    allowRequest: (req, callback) => {
+      if (!allowedOrigins || allowedOrigins.length === 0) {
+        return callback(null, true)
+      }
+      const { origin } = req.headers
+      if (!origin) {
+        return callback(null, true)
+      }
+      const isAllowed = allowedOrigins.includes(origin)
+      if (!isAllowed) {
+        logger.debug('Socket connection from disallowed origin %s rejected', origin)
+      }
+      callback(null, isAllowed)
+    },
   })
 
   // middleware

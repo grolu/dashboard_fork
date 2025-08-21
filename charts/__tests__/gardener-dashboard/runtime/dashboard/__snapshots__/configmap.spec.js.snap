@@ -715,6 +715,17 @@ exports[`gardener-dashboard configmap token request should render the template 1
 }
 `;
 
+exports[`gardener-dashboard configmap socket io should render the template with allowed origins 1`] = `
+{
+  "io": {
+    "allowedOrigins": [
+      "https://foo.example.com",
+      "https://bar.example.com",
+    ],
+  },
+}
+`;
+
 exports[`gardener-dashboard configmap unreachable seeds should render the template 1`] = `
 {
   "unreachableSeeds": {
