@@ -51,6 +51,24 @@ describe('composables', () => {
         })
       })
 
+      describe('#getNamespacedCloudProfiles', () => {
+        it('should fetch shallow profiles from the cluster-wide endpoint', async () => {
+          fetch.mockResponseOnce(JSON.stringify([]), {
+            headers: {
+              'content-type': 'application/json; charset=UTF-8',
+            },
+          })
+
+          const res = await api.getNamespacedCloudProfiles()
+
+          expect(res.status).toBe(200)
+          expect(res.data).toEqual([])
+          expect(fetch).toBeCalledTimes(1)
+          const [req] = fetch.mock.calls[0]
+          expect(req.url).toBe('http://localhost:3000/api/namespacedcloudprofiles')
+        })
+      })
+
       describe('#getConfiguration', () => {
         it('should fetch the configuration', async () => {
           const { getConfiguration } = api

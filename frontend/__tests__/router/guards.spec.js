@@ -17,11 +17,16 @@ import {
 } from 'pinia'
 
 import { useAuthzStore } from '@/store/authz'
+import { useCloudProfileStore } from '@/store/cloudProfile'
 import { useShootStore } from '@/store/shoot'
 
+import { useApi } from '@/composables/useApi'
 import { useShallowRouteSearchQuery } from '@/composables/useRouteSearchQuery'
 
-import { createGlobalAfterHooks } from '@/router/guards'
+import {
+  createGlobalAfterHooks,
+  ensureCloudProfilesLoaded,
+} from '@/router/guards'
 
 function createTestRouter () {
   return createRouter({
@@ -56,6 +61,28 @@ async function waitForRoute (router, routeName, navigate) {
 }
 
 describe('router', () => {
+  describe('cloud profile initialization', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('does not list shallow profiles again for All Projects or project navigation', async () => {
+      setActivePinia(createPinia())
+      const cloudProfileStore = useCloudProfileStore()
+      const api = useApi()
+      const getCloudProfiles = vi.spyOn(api, 'getCloudProfiles').mockResolvedValue({ data: [] })
+      const getNamespacedCloudProfiles = vi.spyOn(api, 'getNamespacedCloudProfiles').mockResolvedValue({ data: [] })
+
+      await ensureCloudProfilesLoaded(cloudProfileStore)
+      await ensureCloudProfilesLoaded(cloudProfileStore) // All Projects
+      await ensureCloudProfilesLoaded(cloudProfileStore) // first project
+      await ensureCloudProfilesLoaded(cloudProfileStore) // second project
+
+      expect(getCloudProfiles).toHaveBeenCalledTimes(1)
+      expect(getNamespacedCloudProfiles).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('global after hook', () => {
     let authzStore
     let app

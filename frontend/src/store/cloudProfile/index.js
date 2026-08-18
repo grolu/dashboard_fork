@@ -22,6 +22,7 @@ import sortBy from 'lodash/sortBy'
 import uniq from 'lodash/uniq'
 import map from 'lodash/map'
 import find from 'lodash/find'
+import omit from 'lodash/omit'
 
 export const useCloudProfileStore = defineStore('cloudProfile', () => {
   const api = useApi()
@@ -29,6 +30,9 @@ export const useCloudProfileStore = defineStore('cloudProfile', () => {
   const configStore = useConfigStore()
 
   const list = ref(null)
+  const namespacedCloudProfileDescriptors = ref(null)
+  let generation = 0
+  let namespacedCloudProfileDescriptorsRequest
 
   const isInitial = computed(() => {
     return list.value === null
@@ -38,13 +42,69 @@ export const useCloudProfileStore = defineStore('cloudProfile', () => {
     return list.value
   })
 
+  const areNamespacedCloudProfileDescriptorsInitial = computed(() => {
+    return namespacedCloudProfileDescriptors.value === null
+  })
+
   async function fetchCloudProfiles () {
+    const requestGeneration = generation
     const response = await api.getCloudProfiles()
-    setCloudProfiles(response.data)
+    if (requestGeneration === generation) {
+      setCloudProfiles(response.data)
+    }
+  }
+
+  function fetchNamespacedCloudProfileDescriptors () {
+    if (namespacedCloudProfileDescriptors.value !== null) {
+      return
+    }
+    if (namespacedCloudProfileDescriptorsRequest) {
+      return namespacedCloudProfileDescriptorsRequest
+    }
+
+    const requestGeneration = generation
+    const request = api.getNamespacedCloudProfiles()
+      .then(response => {
+        if (requestGeneration === generation) {
+          setNamespacedCloudProfileDescriptors(response.data)
+        }
+      })
+    namespacedCloudProfileDescriptorsRequest = request
+
+    return request.finally(() => {
+      if (namespacedCloudProfileDescriptorsRequest === request) {
+        namespacedCloudProfileDescriptorsRequest = undefined
+      }
+    })
   }
 
   function setCloudProfiles (cloudProfiles) {
     list.value = cloudProfiles
+  }
+
+  function setNamespacedCloudProfileDescriptors (descriptors) {
+    namespacedCloudProfileDescriptors.value = map(descriptors, descriptor => omit(descriptor, ['status']))
+  }
+
+  function namespacedCloudProfileDescriptorByRef (cloudProfileRef, namespace) {
+    if (cloudProfileRef?.kind !== 'NamespacedCloudProfile' || !namespace) {
+      return null
+    }
+    return find(namespacedCloudProfileDescriptors.value, descriptor => {
+      return descriptor.metadata?.name === cloudProfileRef.name &&
+        descriptor.metadata?.namespace === namespace
+    }) ?? null
+  }
+
+  function parentCloudProfileForDescriptor (descriptor) {
+    return cloudProfileByRef(descriptor?.spec?.parent) ?? null
+  }
+
+  function $reset () {
+    generation++
+    namespacedCloudProfileDescriptorsRequest = undefined
+    list.value = null
+    namespacedCloudProfileDescriptors.value = null
   }
 
   const infraProviderTypesList = computed(() => {
@@ -77,13 +137,20 @@ export const useCloudProfileStore = defineStore('cloudProfile', () => {
 
   return {
     list,
+    namespacedCloudProfileDescriptors,
     isInitial,
+    areNamespacedCloudProfileDescriptorsInitial,
     cloudProfileList,
     setCloudProfiles,
+    setNamespacedCloudProfileDescriptors,
     fetchCloudProfiles,
+    fetchNamespacedCloudProfileDescriptors,
     cloudProfilesByProviderType,
     sortedInfraProviderTypeList,
     cloudProfileByRef,
+    namespacedCloudProfileDescriptorByRef,
+    parentCloudProfileForDescriptor,
+    $reset,
   }
 })
 

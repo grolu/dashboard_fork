@@ -253,10 +253,15 @@ function ensureProjectsLoaded (store) {
   }
 }
 
-function ensureCloudProfilesLoaded (store) {
+export function ensureCloudProfilesLoaded (store) {
+  const promises = []
   if (store.isInitial) {
-    return store.fetchCloudProfiles()
+    promises.push(store.fetchCloudProfiles())
   }
+  if (store.areNamespacedCloudProfileDescriptorsInitial) {
+    promises.push(store.fetchNamespacedCloudProfileDescriptors())
+  }
+  return Promise.all(promises)
 }
 
 function ensureSeedsLoaded (store) {

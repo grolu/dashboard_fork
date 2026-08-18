@@ -246,6 +246,12 @@ export function getCloudProfiles () {
   return getResource('/api/cloudprofiles')
 }
 
+/* Namespaced Cloud Profiles */
+
+export function getNamespacedCloudProfiles () {
+  return getResource('/api/namespacedcloudprofiles')
+}
+
 /* Seeds */
 
 export function getSeeds () {
@@ -478,6 +484,7 @@ export default {
   updateShootCredentialName,
   createShootAdminKubeconfig,
   getCloudProfiles,
+  getNamespacedCloudProfiles,
   getSeeds,
   getSeedStats,
   getSeedStat,
