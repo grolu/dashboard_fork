@@ -102,6 +102,18 @@ class Cache extends Map {
     return this.get('cloudprofiles').list()
   }
 
+  getNamespacedCloudProfiles (namespace) {
+    const items = this.get('namespacedcloudprofiles').list()
+    if (namespace !== undefined) {
+      return items.filter(item => item.metadata.namespace === namespace)
+    }
+    return items
+  }
+
+  getNamespacedCloudProfile (namespace, name) {
+    return this.get('namespacedcloudprofiles').find({ metadata: { namespace, name } })
+  }
+
   getQuotas () {
     return this.get('quotas').list()
   }
@@ -157,6 +169,12 @@ export default {
   },
   getCloudProfiles () {
     return cache.getCloudProfiles()
+  },
+  getNamespacedCloudProfiles (namespace) {
+    return cache.getNamespacedCloudProfiles(namespace)
+  },
+  getNamespacedCloudProfile (namespace, name) {
+    return cache.getNamespacedCloudProfile(namespace, name)
   },
   getQuotas () {
     return cache.getQuotas()

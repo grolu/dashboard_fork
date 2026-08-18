@@ -43,6 +43,12 @@ const NamedGroup = superclass => class extends superclass {
   }
 }
 
+function createInformer (listFunc, watchFunc, Resource, options) {
+  const { transform, ...listWatcherOptions } = options ?? {}
+  const listWatcher = new ListWatcher(listFunc, watchFunc, Resource, listWatcherOptions)
+  return Informer.create(listWatcher, { transform })
+}
+
 // Wrapped subclass factories with deduplication, caching and instanceof support  (https://github.com/justinfagnani/mixwith.js#defining-mixins)
 const NamespaceScoped = Mixin(superclass => class extends superclass {
   static get scope () {
@@ -143,12 +149,9 @@ ClusterScoped.Observable = superclass => class extends superclass {
   }
 
   informer (options) {
-    // create ListWatcher
     const listFunc = options => this.list(options)
     const watchFunc = options => this.watchList(options)
-    const listWatcher = new ListWatcher(listFunc, watchFunc, this.constructor, options)
-    // create informer
-    return Informer.create(listWatcher)
+    return createInformer(listFunc, watchFunc, this.constructor, options)
   }
 }
 
@@ -192,21 +195,15 @@ NamespaceScoped.Observable = superclass => class extends superclass {
 
   informer (namespace, options) {
     assertNamespace(namespace)
-    // create ListWatcher
     const listFunc = options => this.list(namespace, options)
     const watchFunc = options => this.watchList(namespace, options)
-    const listWatcher = new ListWatcher(listFunc, watchFunc, this.constructor, options)
-    // create informer
-    return Informer.create(listWatcher)
+    return createInformer(listFunc, watchFunc, this.constructor, options)
   }
 
   informerAllNamespaces (options) {
-    // create ListWatcher
     const listFunc = options => this.listAllNamespaces(options)
     const watchFunc = options => this.watchListAllNamespaces(options)
-    const listWatcher = new ListWatcher(listFunc, watchFunc, this.constructor, options)
-    // create informer
-    return Informer.create(listWatcher)
+    return createInformer(listFunc, watchFunc, this.constructor, options)
   }
 }
 

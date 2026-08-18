@@ -7,7 +7,9 @@
 import kubeClientModule from '@gardener-dashboard/kube-client'
 import monitorModule from '@gardener-dashboard/monitor'
 import cache from './cache/index.js'
+import { transformNamespacedCloudProfile } from './cache/transforms.js'
 import config from './config/index.js'
+import logger from './logger/index.js'
 import * as watches from './watches/index.js'
 import io from './io/index.js'
 const { createDashboardClient, abortWatcher } = kubeClientModule
@@ -45,9 +47,23 @@ class LifecycleHooks {
     cache.indexShootsBySeedName(informers.shoots)
     // run informers
     const untilHasSyncedList = []
-    for (const informer of Object.values(informers)) {
+    for (const [key, informer] of Object.entries(informers)) {
+      const isNamespacedCloudProfileInformer = key === 'namespacedcloudprofiles'
+      const syncStartedAt = isNamespacedCloudProfileInformer ? Date.now() : undefined
       informer.run(this.ac.signal)
-      untilHasSyncedList.push(informer.store.untilHasSynced)
+      const untilHasSynced = informer.store.untilHasSynced
+      if (isNamespacedCloudProfileInformer) {
+        untilHasSyncedList.push(untilHasSynced.then(value => {
+          logger.info(
+            'Initial NamespacedCloudProfile cache synchronized with %d items in %d ms',
+            informer.store.list().length,
+            Date.now() - syncStartedAt,
+          )
+          return value
+        }))
+      } else {
+        untilHasSyncedList.push(untilHasSynced)
+      }
     }
     // create io instance
     this.io = io(server, cache)
@@ -73,6 +89,9 @@ class LifecycleHooks {
     const informers = {
       // core.gardener
       cloudprofiles: client['core.gardener.cloud'].cloudprofiles.informer(),
+      namespacedcloudprofiles: client['core.gardener.cloud'].namespacedcloudprofiles.informerAllNamespaces({
+        transform: transformNamespacedCloudProfile,
+      }),
       controllerregistrations: client['core.gardener.cloud'].controllerregistrations.informer(),
       projects: client['core.gardener.cloud'].projects.informer(),
       quotas: client['core.gardener.cloud'].quotas.informerAllNamespaces(),

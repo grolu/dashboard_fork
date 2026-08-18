@@ -42,6 +42,53 @@ describe('cache', function () {
     expect(stub).toHaveBeenCalledTimes(1)
   })
 
+  it('should return all NamespacedCloudProfiles or filter them by namespace without cloning', function () {
+    const resources = [
+      {
+        apiVersion: 'core.gardener.cloud/v1beta1',
+        kind: 'NamespacedCloudProfile',
+        metadata: { uid: '1', namespace: 'garden-a', name: 'shared' },
+        spec: { parent: { name: 'parent-a' } },
+      },
+      {
+        apiVersion: 'core.gardener.cloud/v1beta1',
+        kind: 'NamespacedCloudProfile',
+        metadata: { uid: '2', namespace: 'garden-b', name: 'shared' },
+        spec: { parent: { name: 'parent-b' } },
+      },
+      {
+        apiVersion: 'core.gardener.cloud/v1beta1',
+        kind: 'NamespacedCloudProfile',
+        metadata: { uid: '3', namespace: 'garden-a', name: 'other' },
+        spec: { parent: { name: 'parent-a' } },
+      },
+    ]
+    const store = new Store()
+    store.replace(resources)
+    internalCache.set('namespacedcloudprofiles', store)
+
+    expect(cache.getNamespacedCloudProfiles()).toEqual(resources)
+    expect(cache.getNamespacedCloudProfiles('garden-a')).toEqual([resources[0], resources[2]])
+    expect(cache.getNamespacedCloudProfiles('garden-b')).toEqual([resources[1]])
+    expect(cache.getNamespacedCloudProfiles('missing')).toEqual([])
+    expect(cache.getNamespacedCloudProfiles()[0]).toBe(resources[0])
+    expect(cache.getNamespacedCloudProfiles('garden-a')[1]).toBe(resources[2])
+  })
+
+  it('should look up NamespacedCloudProfiles by namespace and name', function () {
+    const resources = [
+      { metadata: { uid: '1', namespace: 'garden-a', name: 'shared' } },
+      { metadata: { uid: '2', namespace: 'garden-b', name: 'shared' } },
+    ]
+    const store = new Store()
+    store.replace(resources)
+    internalCache.set('namespacedcloudprofiles', store)
+
+    expect(cache.getNamespacedCloudProfile('garden-a', 'shared')).toBe(resources[0])
+    expect(cache.getNamespacedCloudProfile('garden-b', 'shared')).toBe(resources[1])
+    expect(cache.getNamespacedCloudProfile('garden-a', 'missing')).toBeUndefined()
+  })
+
   it('should dispatch "getQuotas" to internal cache', function () {
     const list = []
     const stub = vi.spyOn(internalCache, 'getQuotas').mockReturnValue(list)

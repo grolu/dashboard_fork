@@ -180,11 +180,13 @@ describe('kube-client', () => {
 
         it('should create an informer', () => {
           const testObject = new TestObject()
+          const transform = vi.fn(object => object)
           testObject.list = vi.fn()
           testObject.watchList = vi.fn()
-          expect(testObject.informer()).toBe(testInformer)
+          expect(testObject.informer({ transform })).toBe(testInformer)
           expect(Informer.create).toHaveBeenCalledTimes(1)
-          const [listWatcher] = Informer.create.mock.calls[0]
+          const [listWatcher, informerOptions] = Informer.create.mock.calls[0]
+          expect(informerOptions.transform).toBe(transform)
           expect(listWatcher.group).toBe(TestObject.group)
           expect(listWatcher.version).toBe(TestObject.version)
           expect(listWatcher.names).toEqual(TestObject.names)

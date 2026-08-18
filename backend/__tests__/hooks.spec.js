@@ -14,6 +14,8 @@ import {
 import { createDashboardClient } from '@gardener-dashboard/kube-client'
 
 import cache from '../lib/cache/index.js'
+import { transformNamespacedCloudProfile } from '../lib/cache/transforms.js'
+import logger from '../lib/logger/index.js'
 
 vi.mock('../lib/io/index.js')
 vi.mock('../lib/watches/index.js')
@@ -44,6 +46,7 @@ describe('hooks', () => {
     it('#createInformers', async function () {
       const resources = [
         ['core.gardener.cloud', 'cloudprofiles'],
+        ['core.gardener.cloud', 'namespacedcloudprofiles'],
         ['core.gardener.cloud', 'seeds'],
         ['core.gardener.cloud', 'controllerregistrations'],
         ['core.gardener.cloud', 'quotas'],
@@ -71,6 +74,9 @@ describe('hooks', () => {
         expect(names.plural).toBe(name)
         expect(mockFn).toHaveBeenCalledTimes(1)
       }
+      expect(informers.namespacedcloudprofiles.mockFn).toHaveBeenCalledWith({
+        transform: transformNamespacedCloudProfile,
+      })
     })
 
     it('#cleanup', async function () {
@@ -93,18 +99,20 @@ describe('hooks', () => {
       const server = {}
       const ticketCache = {}
       const ioInstance = {}
-      const keys = ['leases', 'shoots', 'projects', 'seeds', 'managedseeds']
+      const keys = ['leases', 'shoots', 'projects', 'seeds', 'managedseeds', 'namespacedcloudprofiles']
       let informers
       let mockCreateInformers
 
       beforeEach(() => {
         informers = keys.reduce((acc, key) => {
+          const items = key === 'namespacedcloudprofiles' ? [{}, {}] : []
           return Object.assign(acc, {
             [key]: {
               on: vi.fn(),
               run: vi.fn(),
               store: {
                 untilHasSynced: Promise.resolve(key),
+                list: vi.fn().mockReturnValue(items),
               },
             },
           })
@@ -118,6 +126,11 @@ describe('hooks', () => {
       })
 
       it('should create and run informers, create io instance and initialize cache and watches', async function () {
+        const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {})
+        const nowSpy = vi.spyOn(Date, 'now')
+          .mockReturnValueOnce(100)
+          .mockReturnValueOnce(142)
+
         await expect(hooks.beforeListen(server)).resolves.toEqual(keys)
 
         expect(mockCreateInformers).toHaveBeenCalledTimes(1)
@@ -140,6 +153,12 @@ describe('hooks', () => {
         expect(cache.indexShootsBySeedName).toHaveBeenCalledTimes(1)
         expect(cache.indexShootsBySeedName.mock.calls[0]).toEqual([informers.shoots])
 
+        expect(infoSpy).toHaveBeenCalledWith(
+          'Initial NamespacedCloudProfile cache synchronized with %d items in %d ms',
+          2,
+          42,
+        )
+
         expect(io).toHaveBeenCalledTimes(1)
         expect(io.mock.calls[0]).toEqual([server, expect.anything()])
 
@@ -150,6 +169,9 @@ describe('hooks', () => {
           expect(watch.mock.calls[0][1]).toBe(informers[key])
         }
         expect(watches.leases.mock.calls[0][2].signal).toBeInstanceOf(AbortSignal)
+
+        infoSpy.mockRestore()
+        nowSpy.mockRestore()
       })
     })
   })

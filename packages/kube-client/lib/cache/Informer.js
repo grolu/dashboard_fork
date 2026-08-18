@@ -13,12 +13,16 @@ class Informer extends EventEmitter {
   #abortController = new AbortController()
   #store
 
-  constructor (listWatcher, { keyPath } = {}) {
+  constructor (listWatcher, { keyPath, transform = object => object } = {}) {
     super()
+    if (typeof transform !== 'function') {
+      throw new TypeError('The transform option must be a function')
+    }
     const store = this.#store = new Store({ keyPath })
     const emitter = this
     this.#reflector = Reflector.create(listWatcher, {
       replace (items, resourceVersion) {
+        items = items.map(transform)
         const events = new Map()
         for (const key of store.listKeys()) {
           const object = store.getByKey(key)
@@ -39,6 +43,7 @@ class Informer extends EventEmitter {
         }
       },
       addOrUpdate (newObject) {
+        newObject = transform(newObject)
         const oldObject = store.get(newObject)
         if (oldObject) {
           store.update(newObject)
@@ -55,6 +60,7 @@ class Informer extends EventEmitter {
         this.addOrUpdate(newObject)
       },
       delete (object) {
+        object = transform(object)
         store.delete(object)
         emitter.emit('delete', object)
       },
