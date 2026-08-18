@@ -11,6 +11,7 @@ import infoRoute from './info.js'
 import openapiRoute from '../openapi/index.js'
 import userRoute from './user.js'
 import cloudprofilesRoute from './cloudprofiles.js'
+import namespacedCloudProfilesRoute from './namespacedCloudProfiles.js'
 import seedsRoute from './seeds.js'
 import seedStatsRoute from './seedstats.js'
 import managedSeedsRoute from './managedseeds.js'
@@ -30,6 +31,7 @@ const routes = {
   '/openapi': openapiRoute,
   '/user': userRoute,
   '/cloudprofiles': cloudprofilesRoute,
+  '/namespacedcloudprofiles': namespacedCloudProfilesRoute,
   '/seeds': seedsRoute,
   '/seedstats': seedStatsRoute,
   '/namespaces/:namespace/managedseeds': managedSeedsRoute,
@@ -38,6 +40,7 @@ const routes = {
   '/projects': projectsRoute,
   '/namespaces/:namespace/shoots': shootsRoute,
   '/namespaces/:namespace/tickets': ticketsRoute,
+  '/namespaces/:namespace/namespacedcloudprofiles': namespacedCloudProfilesRoute,
   '/cloudprovidercredentials': cloudProviderCredentialsRoute,
   '/namespaces/:namespace/members': membersRoute,
   '/namespaces/:namespace/resourcequotas': resourceQuotasRoute,
