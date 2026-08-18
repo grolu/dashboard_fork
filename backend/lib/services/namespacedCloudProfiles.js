@@ -122,3 +122,31 @@ export async function listAll ({ user, trace }) {
     }
   }
 }
+
+export async function getStatus ({ user, namespace, name, signal, trace }) {
+  const startedAt = trace ? performance.now() : undefined
+  try {
+    const allowed = await measureAsync(
+      trace,
+      'authorizationMilliseconds',
+      () => authorization.canGetNamespacedCloudProfile(user, namespace, name, { signal }),
+    )
+    if (!allowed) {
+      throw new Forbidden(`You are not allowed to get namespaced cloudprofile ${name} in namespace ${namespace}`)
+    }
+
+    return await measureAsync(
+      trace,
+      'upstreamMilliseconds',
+      () => user.client['core.gardener.cloud'].namespacedcloudprofiles.get(
+        namespace,
+        [name, 'status'],
+        { signal },
+      ),
+    )
+  } finally {
+    if (trace) {
+      trace.serviceMilliseconds = performance.now() - startedAt
+    }
+  }
+}

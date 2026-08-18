@@ -47,7 +47,7 @@ class MockClient {
     return this.request(path, options)
   }
 
-  request (path, { method = 'get', searchParams, headers = {}, json, body } = {}) {
+  request (path, { method = 'get', searchParams, headers = {}, json, body, signal } = {}) {
     const { protocol, host, pathname = '/' } = this.baseUrl
     headers = {
       ...this.defaults.options.headers,
@@ -70,6 +70,9 @@ class MockClient {
       args.push(json)
     } else if (body) {
       args.push(body)
+    }
+    if (signal) {
+      args.push({ signal })
     }
     return mockRequest(...args)
   }

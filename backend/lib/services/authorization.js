@@ -7,7 +7,7 @@
 import kubeClientModule from '@gardener-dashboard/kube-client'
 const { Resources, createClient } = kubeClientModule
 
-async function hasAuthorization (user, { resourceAttributes, nonResourceAttributes }) {
+async function hasAuthorization (user, { resourceAttributes, nonResourceAttributes }, options) {
   if (!user) {
     return false
   }
@@ -21,11 +21,15 @@ async function hasAuthorization (user, { resourceAttributes, nonResourceAttribut
       nonResourceAttributes,
     },
   }
+  const reviews = client['authorization.k8s.io'].selfsubjectaccessreviews
+  const response = options
+    ? await reviews.create(body, options)
+    : await reviews.create(body)
   const {
     status: {
       allowed = false,
     } = {},
-  } = await client['authorization.k8s.io'].selfsubjectaccessreviews.create(body)
+  } = response
   return allowed
 }
 
@@ -144,6 +148,18 @@ export function canListNamespacedCloudProfiles (user, namespace) {
       namespace,
     },
   })
+}
+
+export function canGetNamespacedCloudProfile (user, namespace, name, options) {
+  return hasAuthorization(user, {
+    resourceAttributes: {
+      verb: 'get',
+      group: 'core.gardener.cloud',
+      resource: 'namespacedcloudprofiles',
+      namespace,
+      name,
+    },
+  }, options)
 }
 
 export function canListResourceQuotas (user, namespace) {

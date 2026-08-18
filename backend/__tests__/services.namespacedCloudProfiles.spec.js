@@ -25,6 +25,7 @@ vi.mock('../lib/cache/index.js', async (importOriginal) => {
 })
 
 vi.mock('../lib/services/authorization.js', () => ({
+  canGetNamespacedCloudProfile: vi.fn(),
   canListNamespacedCloudProfiles: vi.fn(),
 }))
 
@@ -61,9 +62,17 @@ function createProject (namespace, member, phase = 'Ready') {
 }
 
 describe('services/namespacedCloudProfiles', () => {
+  const getNamespacedCloudProfile = vi.fn()
   const user = {
     id: 'foo@example.org',
     groups: [],
+    client: {
+      'core.gardener.cloud': {
+        namespacedcloudprofiles: {
+          get: getNamespacedCloudProfile,
+        },
+      },
+    },
   }
   const profiles = [
     createProfile('garden-foo'),
@@ -172,5 +181,94 @@ describe('services/namespacedCloudProfiles', () => {
       itemCount: profiles.length,
       serviceMilliseconds: expect.any(Number),
     })
+  })
+
+  it('fetches one complete profile from the status subresource without using the cache', async () => {
+    const signal = new AbortController().signal
+    const trace = {}
+    const profile = {
+      ...createProfile('garden-foo'),
+      status: {
+        cloudProfileSpec: {
+          type: 'infra1',
+        },
+      },
+    }
+    authorization.canGetNamespacedCloudProfile.mockResolvedValue(true)
+    getNamespacedCloudProfile.mockResolvedValue(profile)
+
+    const result = await namespacedCloudProfiles.getStatus({
+      user,
+      namespace: 'garden-foo',
+      name: 'shared-profile',
+      signal,
+      trace,
+    })
+
+    expect(result).toBe(profile)
+    expect(authorization.canGetNamespacedCloudProfile).toHaveBeenCalledExactlyOnceWith(
+      user,
+      'garden-foo',
+      'shared-profile',
+      { signal },
+    )
+    expect(getNamespacedCloudProfile).toHaveBeenCalledExactlyOnceWith(
+      'garden-foo',
+      ['shared-profile', 'status'],
+      { signal },
+    )
+    expect(cache.getNamespacedCloudProfiles).not.toHaveBeenCalled()
+    expect(trace).toEqual({
+      authorizationMilliseconds: expect.any(Number),
+      upstreamMilliseconds: expect.any(Number),
+      serviceMilliseconds: expect.any(Number),
+    })
+  })
+
+  it('rejects unauthorized status requests without calling Kubernetes or the cache', async () => {
+    authorization.canGetNamespacedCloudProfile.mockResolvedValue(false)
+
+    await expect(namespacedCloudProfiles.getStatus({
+      user,
+      namespace: 'garden-foo',
+      name: 'shared-profile',
+    })).rejects.toEqual(expect.objectContaining({
+      statusCode: 403,
+      message: 'You are not allowed to get namespaced cloudprofile shared-profile in namespace garden-foo',
+    }))
+
+    expect(getNamespacedCloudProfile).not.toHaveBeenCalled()
+    expect(cache.getNamespacedCloudProfiles).not.toHaveBeenCalled()
+  })
+
+  it('forwards cancellation to the Kubernetes status request', async () => {
+    const abortController = new AbortController()
+    let resolveRequestStarted
+    const requestStarted = new Promise(resolve => {
+      resolveRequestStarted = resolve
+    })
+    const abortError = Object.assign(new Error('The operation was aborted'), {
+      name: 'AbortError',
+      code: 'ABORT_ERR',
+    })
+    authorization.canGetNamespacedCloudProfile.mockResolvedValue(true)
+    getNamespacedCloudProfile.mockImplementation((namespace, name, { signal }) => {
+      return new Promise((resolve, reject) => {
+        resolveRequestStarted()
+        signal.addEventListener('abort', () => reject(abortError), { once: true })
+      })
+    })
+
+    const promise = namespacedCloudProfiles.getStatus({
+      user,
+      namespace: 'garden-foo',
+      name: 'shared-profile',
+      signal: abortController.signal,
+    })
+    await requestStarted
+    abortController.abort()
+
+    await expect(promise).rejects.toBe(abortError)
+    expect(getNamespacedCloudProfile).toHaveBeenCalledTimes(1)
   })
 })

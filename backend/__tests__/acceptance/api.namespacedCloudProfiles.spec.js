@@ -14,13 +14,36 @@ import {
   afterEach,
 } from 'vitest'
 import request from '@gardener-dashboard/request'
+import createError from 'http-errors'
 import cache from '../../lib/cache/index.js'
 import logger from '../../lib/logger/index.js'
 
 const { mockRequest } = request
 
 function getResourceAttributes () {
-  return mockRequest.mock.calls.map(([, body]) => body.spec.resourceAttributes)
+  return mockRequest.mock.calls.map(([, body]) => body?.spec?.resourceAttributes)
+}
+
+function getRequestPaths () {
+  return mockRequest.mock.calls.map(([headers]) => headers[':path'])
+}
+
+function createFullProfile ({ compressionFixture } = {}) {
+  const cachedProfile = cache.getNamespacedCloudProfile('garden-foo', 'shared-profile')
+  const profile = structuredClone(cachedProfile)
+  profile.status = {
+    cloudProfileSpec: {
+      type: 'infra1',
+      kubernetes: {
+        versions: [{ version: '1.31.1' }],
+      },
+      machineTypes: profile.spec.machineTypes,
+    },
+  }
+  if (compressionFixture) {
+    profile.status.cloudProfileSpec.compressionFixture = compressionFixture
+  }
+  return { cachedProfile, profile }
 }
 
 describe('api', function () {
@@ -183,6 +206,192 @@ describe('api', function () {
         authorizationMilliseconds: expect.any(Number),
         cacheMilliseconds: expect.any(Number),
         itemCount: 1,
+        serviceMilliseconds: expect.any(Number),
+        serializationMilliseconds: expect.any(Number),
+        streamingMilliseconds: expect.any(Number),
+        totalMilliseconds: expect.any(Number),
+        statusCode: 200,
+        outcome: 'finished',
+      })
+    })
+
+    it('fetches one complete status resource directly without consulting the shallow cache', async function () {
+      const { cachedProfile, profile } = createFullProfile()
+      const getCachedProfileSpy = vi.spyOn(cache, 'getNamespacedCloudProfile')
+      const listCachedProfilesSpy = vi.spyOn(cache, 'getNamespacedCloudProfiles')
+      mockRequest.mockImplementationOnce(fixtures.auth.mocks.reviewSelfSubjectAccess())
+      mockRequest.mockResolvedValueOnce(profile)
+
+      const res = await agent
+        .get('/api/namespaces/garden-foo/namespacedcloudprofiles/shared-profile/status')
+        .set('cookie', await clusterUser.cookie)
+        .expect('cache-control', 'no-store')
+        .expect('content-type', /json/)
+        .expect(200)
+
+      expect(cachedProfile).not.toHaveProperty('status')
+      expect(res.body).toEqual(profile)
+      expect(res.body.status.cloudProfileSpec).toEqual(profile.status.cloudProfileSpec)
+      expect(mockRequest).toHaveBeenCalledTimes(2)
+      expect(getResourceAttributes()).toEqual([{
+        verb: 'get',
+        group: 'core.gardener.cloud',
+        resource: 'namespacedcloudprofiles',
+        namespace: 'garden-foo',
+        name: 'shared-profile',
+      }, undefined])
+      expect(getRequestPaths().filter(path => path.endsWith('/status'))).toEqual([
+        '/apis/core.gardener.cloud/v1beta1/namespaces/garden-foo/namespacedcloudprofiles/shared-profile/status',
+      ])
+      expect(getCachedProfileSpy).not.toHaveBeenCalled()
+      expect(listCachedProfilesSpy).not.toHaveBeenCalled()
+    })
+
+    it('does not expose the status handler outside a namespace', async function () {
+      await agent
+        .get('/api/namespacedcloudprofiles/shared-profile/status')
+        .set('cookie', await clusterUser.cookie)
+        .expect(404)
+
+      expect(mockRequest).not.toHaveBeenCalled()
+    })
+
+    it('returns 403 without fetching a status resource when get access is denied', async function () {
+      mockRequest.mockImplementationOnce(fixtures.auth.mocks.reviewSelfSubjectAccess({
+        allowed: false,
+      }))
+
+      const res = await agent
+        .get('/api/namespaces/garden-foo/namespacedcloudprofiles/shared-profile/status')
+        .set('cookie', await clusterUser.cookie)
+        .expect('cache-control', 'no-store')
+        .expect(403)
+
+      expect(mockRequest).toHaveBeenCalledTimes(1)
+      expect(getResourceAttributes()).toEqual([{
+        verb: 'get',
+        group: 'core.gardener.cloud',
+        resource: 'namespacedcloudprofiles',
+        namespace: 'garden-foo',
+        name: 'shared-profile',
+      }])
+      expect(getRequestPaths().some(path => path.endsWith('/status'))).toBe(false)
+      expect(res.body.message).toBe(
+        'You are not allowed to get namespaced cloudprofile shared-profile in namespace garden-foo',
+      )
+    })
+
+    it('preserves a 404 returned by the Kubernetes status endpoint', async function () {
+      mockRequest.mockImplementationOnce(fixtures.auth.mocks.reviewSelfSubjectAccess())
+      mockRequest.mockRejectedValueOnce(createError(404, 'NamespacedCloudProfile not found'))
+
+      const res = await agent
+        .get('/api/namespaces/garden-foo/namespacedcloudprofiles/missing/status')
+        .set('cookie', await clusterUser.cookie)
+        .expect(404)
+
+      expect(mockRequest).toHaveBeenCalledTimes(2)
+      expect(getRequestPaths()[1]).toBe(
+        '/apis/core.gardener.cloud/v1beta1/namespaces/garden-foo/namespacedcloudprofiles/missing/status',
+      )
+      expect(res.body).toEqual(expect.objectContaining({
+        code: 404,
+        message: 'NamespacedCloudProfile not found',
+      }))
+    })
+
+    it('preserves upstream Kubernetes errors', async function () {
+      mockRequest.mockImplementationOnce(fixtures.auth.mocks.reviewSelfSubjectAccess())
+      mockRequest.mockRejectedValueOnce(createError(503, 'Kubernetes API unavailable'))
+
+      const res = await agent
+        .get('/api/namespaces/garden-foo/namespacedcloudprofiles/shared-profile/status')
+        .set('cookie', await clusterUser.cookie)
+        .expect(503)
+
+      expect(mockRequest).toHaveBeenCalledTimes(2)
+      expect(res.body).toEqual(expect.objectContaining({
+        code: 503,
+        message: 'Kubernetes API unavailable',
+      }))
+    })
+
+    it('gzip-compresses a large status response', async function () {
+      const { profile } = createFullProfile({
+        compressionFixture: 'x'.repeat(8192),
+      })
+      mockRequest.mockImplementationOnce(fixtures.auth.mocks.reviewSelfSubjectAccess())
+      mockRequest.mockResolvedValueOnce(profile)
+
+      const res = await agent
+        .get('/api/namespaces/garden-foo/namespacedcloudprofiles/shared-profile/status')
+        .set('accept-encoding', 'gzip')
+        .set('cookie', await clusterUser.cookie)
+        .expect('content-encoding', 'gzip')
+        .expect('cache-control', 'no-store')
+        .expect(200)
+
+      expect(res.body.status.cloudProfileSpec.compressionFixture).toHaveLength(8192)
+    })
+
+    it('cancels the Kubernetes request when the client disconnects', async function () {
+      const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {})
+      let resolveStatusStarted
+      const statusStarted = new Promise(resolve => {
+        resolveStatusStarted = resolve
+      })
+      mockRequest.mockImplementationOnce(fixtures.auth.mocks.reviewSelfSubjectAccess())
+      mockRequest.mockImplementationOnce((headers, { signal }) => {
+        resolveStatusStarted(signal)
+        return new Promise((resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+        })
+      })
+
+      const pendingRequest = agent
+        .get('/api/namespaces/garden-foo/namespacedcloudprofiles/shared-profile/status')
+        .set('cookie', await clusterUser.cookie)
+      pendingRequest.end(() => {})
+      const signal = await statusStarted
+
+      pendingRequest.abort()
+      let traceCall
+      await vi.waitFor(() => {
+        expect(signal.aborted).toBe(true)
+        traceCall = infoSpy.mock.calls.find(([message]) =>
+          message === 'NamespacedCloudProfile status request trace %s for namespace %s and name %s: %s')
+        expect(traceCall).toBeDefined()
+      })
+
+      expect(traceCall).toBeDefined()
+      expect(JSON.parse(traceCall[4])).toEqual(expect.objectContaining({
+        upstreamMilliseconds: expect.any(Number),
+        statusCode: 499,
+        outcome: 'cancelled',
+      }))
+    })
+
+    it('traces authorization, Kubernetes fetch, serialization, streaming, and total time', async function () {
+      const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {})
+      const { profile } = createFullProfile()
+      mockRequest.mockImplementationOnce(fixtures.auth.mocks.reviewSelfSubjectAccess())
+      mockRequest.mockResolvedValueOnce(profile)
+
+      await agent
+        .get('/api/namespaces/garden-foo/namespacedcloudprofiles/shared-profile/status')
+        .set('x-request-id', 'namespaced-profile-status-trace')
+        .set('cookie', await clusterUser.cookie)
+        .expect(200)
+
+      const traceCall = infoSpy.mock.calls.find(([message]) =>
+        message === 'NamespacedCloudProfile status request trace %s for namespace %s and name %s: %s')
+      expect(traceCall).toBeDefined()
+      expect(traceCall[1]).toBe('namespaced-profile-status-trace')
+      expect(traceCall[2]).toBe('garden-foo')
+      expect(traceCall[3]).toBe('shared-profile')
+      expect(JSON.parse(traceCall[4])).toEqual({
+        authorizationMilliseconds: expect.any(Number),
+        upstreamMilliseconds: expect.any(Number),
         serviceMilliseconds: expect.any(Number),
         serializationMilliseconds: expect.any(Number),
         streamingMilliseconds: expect.any(Number),
