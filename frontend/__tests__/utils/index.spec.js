@@ -22,6 +22,7 @@ import {
   convertToGi,
   convertToGibibyte,
   handleTextFieldDrop,
+  getCloudProfileSpec,
 } from '@/utils'
 
 import pick from 'lodash/pick'
@@ -704,6 +705,77 @@ describe('utils', () => {
     it('should not allow pre or suffix other than allowed ones', () => {
       expect(normalizeVersion('x23.1')).toBeUndefined()
       expect(normalizeVersion('23.2x')).toBeUndefined()
+    })
+  })
+
+  describe('getCloudProfileSpec', () => {
+    it('returns the spec for a regular CloudProfile', () => {
+      const cloudProfile = {
+        kind: 'CloudProfile',
+        metadata: { name: 'aws' },
+        spec: { type: 'aws' },
+      }
+
+      expect(getCloudProfileSpec(cloudProfile)).toBe(cloudProfile.spec)
+    })
+
+    it('returns status.cloudProfileSpec for a full NamespacedCloudProfile', () => {
+      const cloudProfile = {
+        kind: 'NamespacedCloudProfile',
+        metadata: {
+          name: 'custom',
+          namespace: 'garden-a',
+        },
+        spec: {
+          parent: {
+            kind: 'CloudProfile',
+            name: 'aws',
+          },
+        },
+        status: {
+          cloudProfileSpec: {
+            type: 'aws',
+            kubernetes: { versions: [{ version: '1.31.4' }] },
+          },
+        },
+      }
+
+      expect(getCloudProfileSpec(cloudProfile)).toBe(cloudProfile.status.cloudProfileSpec)
+    })
+
+    it('rejects a shallow NamespacedCloudProfile without an effective status spec', () => {
+      const cloudProfile = {
+        kind: 'NamespacedCloudProfile',
+        metadata: {
+          name: 'custom',
+          namespace: 'garden-a',
+        },
+        spec: {
+          parent: {
+            kind: 'CloudProfile',
+            name: 'aws',
+          },
+        },
+      }
+
+      expect(() => getCloudProfileSpec(cloudProfile)).toThrow(
+        'NamespacedCloudProfile garden-a/custom has no status.cloudProfileSpec; ' +
+        'use useLightweightCloudProfile for passive lookups or fetch the status subresource',
+      )
+    })
+
+    it('preserves the existing empty result for absent profiles', () => {
+      expect(getCloudProfileSpec(null)).toEqual({})
+      expect(getCloudProfileSpec(undefined)).toEqual({})
+    })
+
+    it('uses the spec for profile-shaped objects without a kind', () => {
+      const cloudProfile = {
+        metadata: { name: 'aws' },
+        spec: { type: 'aws' },
+      }
+
+      expect(getCloudProfileSpec(cloudProfile)).toBe(cloudProfile.spec)
     })
   })
 

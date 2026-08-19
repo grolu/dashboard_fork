@@ -224,6 +224,33 @@ export function cloudProfileDisplayName (cloudProfile) {
   return get(cloudProfile, ['metadata', 'annotations', 'garden.sapcloud.io/displayName'], name)
 }
 
+/**
+ * Returns the complete effective spec for a CloudProfile.
+ *
+ * A NamespacedCloudProfile is complete only when its status subresource
+ * contains cloudProfileSpec. Shallow descriptors must use targeted lightweight
+ * lookups instead of being treated as effective profiles.
+ *
+ * @param {object|null|undefined} cloudProfile - CloudProfile or full NamespacedCloudProfile
+ * @returns {object} Complete effective CloudProfile spec
+ * @throws {Error} If a NamespacedCloudProfile has no effective status spec
+ */
+export function getCloudProfileSpec (cloudProfile) {
+  if (cloudProfile?.kind === 'NamespacedCloudProfile') {
+    const cloudProfileSpec = cloudProfile.status?.cloudProfileSpec
+    if (!cloudProfileSpec) {
+      const namespace = cloudProfile.metadata?.namespace ?? '<unknown namespace>'
+      const name = cloudProfile.metadata?.name ?? '<unknown name>'
+      throw new Error(
+        `NamespacedCloudProfile ${namespace}/${name} has no status.cloudProfileSpec; ` +
+        'use useLightweightCloudProfile for passive lookups or fetch the status subresource',
+      )
+    }
+    return cloudProfileSpec
+  }
+  return cloudProfile?.spec ?? {}
+}
+
 export function convertToGibibyte (value) {
   if (!value) {
     throw new TypeError('Value is empty')
