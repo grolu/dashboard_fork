@@ -252,5 +252,49 @@ describe('composables', () => {
       setShootItem('spec.secretBindingName', 'aws-secretbinding')
       expect(reactiveShootItem.shootCloudProviderBinding).toMatchSnapshot()
     })
+
+    it('should compute passive Kubernetes metadata and update flags from lightweight profiles', () => {
+      cloudProfileStore.setCloudProfiles([{
+        kind: 'CloudProfile',
+        metadata: { name: 'parent' },
+        spec: {
+          kubernetes: {
+            versions: [
+              { version: '1.32.1', classification: 'deprecated' },
+              { version: '1.33.0', classification: 'supported' },
+            ],
+          },
+        },
+      }])
+      cloudProfileStore.setNamespacedCloudProfileDescriptors([{
+        kind: 'NamespacedCloudProfile',
+        metadata: {
+          name: 'custom',
+          namespace: 'garden-test',
+        },
+        spec: {
+          parent: { kind: 'CloudProfile', name: 'parent' },
+          kubernetes: {
+            versions: [
+              { version: '1.32.1', classification: 'supported' },
+              { version: '1.32.2', classification: 'supported' },
+            ],
+          },
+        },
+      }])
+      setShootItem('spec.cloudProfile', {
+        kind: 'NamespacedCloudProfile',
+        name: 'custom',
+      })
+      setShootItem('spec.kubernetes.version', '1.32.1')
+
+      expect(reactiveShootItem.shootKubernetesVersionObject).toMatchObject({
+        version: '1.32.1',
+        classification: 'supported',
+      })
+      expect(reactiveShootItem.shootKubernetesUpdateAvailable).toBe(true)
+      expect(reactiveShootItem.shootSupportedPatchAvailable).toBe(true)
+      expect(reactiveShootItem.shootSupportedUpgradeAvailable).toBe(true)
+    })
   })
 })

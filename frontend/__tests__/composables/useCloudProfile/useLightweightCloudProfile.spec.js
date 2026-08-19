@@ -197,6 +197,72 @@ describe('composables', () => {
       ))).toBe(parentMachineImageVersion)
     })
 
+    it('evaluates effective version candidates without allowing parent duplicates to override local values', () => {
+      const namespacedKubernetesVersion = {
+        ...parentKubernetesVersion,
+        classification: 'deprecated',
+      }
+      const namespacedMachineImageVersion = {
+        ...parentMachineImageVersion,
+        classification: 'deprecated',
+      }
+      const descriptor = createNamespacedCloudProfile('garden-a', {
+        kubernetes: { versions: [namespacedKubernetesVersion] },
+        machineImages: [{
+          name: parentMachineImage.name,
+          versions: [namespacedMachineImageVersion],
+        }],
+      })
+      const lookups = createNamespacedLookups(descriptor)
+
+      expect(lookups.someKubernetesVersion(version => {
+        return version.version === parentKubernetesVersion.version && version.classification === 'supported'
+      })).toBe(false)
+      expect(lookups.someMachineImageVersion(parentMachineImage.name, 'amd64', version => {
+        return version.version === parentMachineImageVersion.version && version.classification === 'supported'
+      })).toBe(false)
+    })
+
+    it('uses targeted local values and parent fallback for seed and OpenStack lookups', () => {
+      const parentSeedSelector = { providerTypes: ['aws'] }
+      const localSeedSelector = { matchLabels: { environment: 'testing' } }
+      const parentFloatingPool = {
+        name: 'public-*',
+        loadBalancerClasses: [{ name: 'parent' }],
+      }
+      const localFloatingPool = {
+        name: 'custom-*',
+        loadBalancerClasses: [{ name: 'local' }],
+      }
+      cloudProfileStore.setCloudProfiles([
+        createCloudProfile('parent', {
+          ...parentSpec,
+          seedSelector: parentSeedSelector,
+          providerConfig: {
+            constraints: {
+              floatingPools: [parentFloatingPool],
+            },
+          },
+        }),
+      ])
+      const descriptor = createNamespacedCloudProfile('garden-a', {
+        seedSelector: localSeedSelector,
+        providerConfig: {
+          constraints: {
+            floatingPools: [localFloatingPool],
+          },
+        },
+      })
+      const lookups = createNamespacedLookups(descriptor)
+
+      expect(toRaw(lookups.getSeedSelector())).toBe(localSeedSelector)
+      expect(toRaw(lookups.findOpenStackFloatingPool('custom-net'))).toBe(localFloatingPool)
+      expect(toRaw(lookups.findOpenStackFloatingPool('public-net'))).toBe(parentFloatingPool)
+
+      descriptor.spec.seedSelector = undefined
+      expect(toRaw(lookups.getSeedSelector())).toBe(parentSeedSelector)
+    })
+
     it('keeps duplicate NamespacedCloudProfile names isolated by namespace', () => {
       const gardenAMachineType = { name: 'shared-large', source: 'garden-a' }
       const gardenBMachineType = { name: 'shared-large', source: 'garden-b' }

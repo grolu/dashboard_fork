@@ -7,6 +7,7 @@
 import {
   computed,
   isRef,
+  toValue,
 } from 'vue'
 
 import { useConfigStore } from '@/store/config'
@@ -23,10 +24,16 @@ import template from 'lodash/template'
  * including definitions and no-items text.
  *
  * @param {Ref<object>} cloudProfile - A Vue ref containing the cloud profile object
+ * @param {object} options - Optional targeted lightweight lookup dependencies
  * @throws {Error} If cloudProfile is not a ref
  */
-export function useAccessRestrictions (cloudProfile) {
-  if (!isRef(cloudProfile)) {
+export function useAccessRestrictions (cloudProfile, options = {}) {
+  const {
+    findRegion,
+    cloudProfileRef,
+  } = options
+
+  if (!findRegion && !isRef(cloudProfile)) {
     throw new Error('cloudProfile must be a ref!')
   }
 
@@ -42,11 +49,9 @@ export function useAccessRestrictions (cloudProfile) {
    * @param region
    */
   function accessRestrictions (region) {
-    if (!cloudProfile.value) {
-      return []
-    }
-
-    const regionData = find(cloudProfile.value?.spec.regions, ['name', region])
+    const regionData = findRegion
+      ? findRegion(region)
+      : find(cloudProfile.value?.spec.regions, ['name', region])
     if (!regionData) {
       return []
     }
@@ -101,12 +106,18 @@ export function useAccessRestrictions (cloudProfile) {
     return computed(() => {
       const defaultNoItemsText = 'No access restriction options available for region ${region}' // eslint-disable-line no-template-curly-in-string
       const noItemsText = get(configStore, ['accessRestriction', 'noItemsText'], defaultNoItemsText)
+      const resolvedCloudProfileRef = findRegion
+        ? toValue(cloudProfileRef)
+        : {
+            name: cloudProfile.value?.metadata?.name,
+            kind: cloudProfile.value?.kind,
+          }
 
       return template(noItemsText)({
         region: region.value,
-        cloudProfileName: cloudProfile.value?.metadata?.name,
-        cloudProfileKind: cloudProfile.value?.kind,
-        cloudProfile: cloudProfile.value?.metadata?.name, // deprecated
+        cloudProfileName: resolvedCloudProfileRef?.name,
+        cloudProfileKind: resolvedCloudProfileRef?.kind,
+        cloudProfile: resolvedCloudProfileRef?.name, // deprecated
       })
     })
   }

@@ -8,7 +8,15 @@ import { toValue } from 'vue'
 
 import { useCloudProfileStore } from '@/store/cloudProfile'
 
+import { matchesPropertyOrEmpty } from '@/composables/helper'
+
+import {
+  bestMatchForString,
+  wildcardObjectsFromStrings,
+} from '@/utils/wildcard'
+
 import find from 'lodash/find'
+import filter from 'lodash/filter'
 import get from 'lodash/get'
 
 /**
@@ -28,7 +36,7 @@ export function useLightweightCloudProfile (cloudProfileRef, namespace, options 
     cloudProfileStore = useCloudProfileStore(),
   } = options
 
-  function findWithFallback (lookup) {
+  function resolveSpecs () {
     const resolvedCloudProfileRef = toValue(cloudProfileRef)
 
     if (resolvedCloudProfileRef?.kind === 'NamespacedCloudProfile') {
@@ -36,21 +44,57 @@ export function useLightweightCloudProfile (cloudProfileRef, namespace, options 
         resolvedCloudProfileRef,
         toValue(namespace),
       )
-      const namespacedItem = lookup(descriptor?.spec)
-      if (namespacedItem !== undefined) {
-        return namespacedItem
+      if (!descriptor) {
+        return []
       }
 
       const parentCloudProfile = cloudProfileStore.parentCloudProfileForDescriptor(descriptor)
-      return lookup(parentCloudProfile?.spec)
+      return [descriptor.spec, parentCloudProfile?.spec]
     }
 
     const cloudProfile = cloudProfileStore.cloudProfileByRef(resolvedCloudProfileRef)
-    return lookup(cloudProfile?.spec)
+    return cloudProfile ? [cloudProfile.spec] : []
+  }
+
+  function findWithFallback (lookup) {
+    for (const spec of resolveSpecs()) {
+      const item = lookup(spec)
+      if (item !== undefined) {
+        return item
+      }
+    }
+    return undefined
+  }
+
+  function someWithFallback (lookup, identity, predicate) {
+    // Evaluate local and parent sources in precedence order without building an
+    // effective collection. A local identity shadows the same parent identity.
+    const seen = new Set()
+    for (const spec of resolveSpecs()) {
+      for (const item of lookup(spec) ?? []) {
+        const key = identity(item)
+        if (seen.has(key)) {
+          continue
+        }
+        seen.add(key)
+        if (predicate(item)) {
+          return true
+        }
+      }
+    }
+    return false
   }
 
   function findKubernetesVersion (version) {
     return findWithFallback(spec => find(get(spec, ['kubernetes', 'versions']), { version }))
+  }
+
+  function someKubernetesVersion (predicate) {
+    return someWithFallback(
+      spec => get(spec, ['kubernetes', 'versions']),
+      item => item.version,
+      predicate,
+    )
   }
 
   function findMachineType (name) {
@@ -69,8 +113,36 @@ export function useLightweightCloudProfile (cloudProfileRef, namespace, options 
     return findWithFallback(spec => {
       const image = find(get(spec, ['machineImages']), { name: imageName })
       return find(image?.versions, item => {
-        return item.version === version && item.architectures?.includes(architecture)
+        const architectures = item.architectures?.length
+          ? item.architectures
+          : ['amd64']
+        return item.version === version && architectures.includes(architecture)
       })
+    })
+  }
+
+  function someMachineImageVersion (imageName, architecture, predicate) {
+    return someWithFallback(
+      spec => {
+        const image = find(get(spec, ['machineImages']), { name: imageName })
+        return image?.versions
+          ?.filter(version => {
+            const architectures = version.architectures?.length
+              ? version.architectures
+              : ['amd64']
+            return architectures.includes(architecture)
+          })
+          .map(version => ({ image, version }))
+      },
+      item => item.version.version,
+      ({ image, version }) => predicate(version, image),
+    )
+  }
+
+  function getMachineImageUpdateStrategy (imageName) {
+    return findWithFallback(spec => {
+      const image = find(get(spec, ['machineImages']), { name: imageName })
+      return image?.updateStrategy
     })
   }
 
@@ -89,14 +161,42 @@ export function useLightweightCloudProfile (cloudProfileRef, namespace, options 
     return findWithFallback(spec => get(spec, ['type']))
   }
 
+  function getSeedSelector () {
+    return findWithFallback(spec => get(spec, ['seedSelector']))
+  }
+
+  function findOpenStackFloatingPool (name, region, domain) {
+    return findWithFallback(spec => {
+      const floatingPools = get(spec, ['providerConfig', 'constraints', 'floatingPools'])
+      let availableFloatingPools = filter(floatingPools, matchesPropertyOrEmpty('region', region))
+      availableFloatingPools = filter(availableFloatingPools, matchesPropertyOrEmpty('domain', domain))
+
+      if (find(availableFloatingPools, pool => !!pool.region && !pool.nonConstraining)) {
+        availableFloatingPools = filter(availableFloatingPools, { region })
+      }
+      if (find(availableFloatingPools, pool => !!pool.domain && !pool.nonConstraining)) {
+        availableFloatingPools = filter(availableFloatingPools, { domain })
+      }
+
+      const wildcardObjects = wildcardObjectsFromStrings(availableFloatingPools.map(pool => pool.name))
+      const wildcardName = bestMatchForString(wildcardObjects, name)
+      return find(availableFloatingPools, ['name', wildcardName?.originalValue])
+    })
+  }
+
   return {
     findKubernetesVersion,
+    someKubernetesVersion,
     findMachineType,
     findVolumeType,
     findMachineImage,
     findMachineImageVersion,
+    someMachineImageVersion,
+    getMachineImageUpdateStrategy,
     findRegion,
     findZone,
     getProviderType,
+    getSeedSelector,
+    findOpenStackFloatingPool,
   }
 }

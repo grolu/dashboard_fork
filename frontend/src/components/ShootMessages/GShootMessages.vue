@@ -65,7 +65,7 @@ import { useCloudProfileStore } from '@/store/cloudProfile'
 import { useConfigStore } from '@/store/config'
 
 import { useShootItem } from '@/composables/useShootItem'
-import { useKubernetesVersions } from '@/composables/useCloudProfile/useKubernetesVersions.js'
+import { useLightweightCloudProfile } from '@/composables/useCloudProfile/useLightweightCloudProfile.js'
 import { useShootMessages } from '@/composables/useShootMessages'
 
 import { isSelfTerminationWarning } from '@/utils'
@@ -191,10 +191,16 @@ const shootMessages = computed(() => {
 })
 
 const k8sAutoPatch = computed(() => get(shootItem.value, ['spec', 'maintenance', 'autoUpdate', 'kubernetesVersion'], false))
-const cloudProfile = computed(() => cloudProfileStore.cloudProfileByRef(shootCloudProfileRef.value))
-const { useKubernetesVersionExpiration } = useKubernetesVersions(cloudProfile)
+const lightweightCloudProfile = useLightweightCloudProfile(
+  shootCloudProfileRef,
+  shootNamespace,
+  { cloudProfileStore },
+)
+const {
+  useKubernetesVersionExpiration,
+  useExpiringWorkerGroups,
+} = useShootMessages(lightweightCloudProfile)
 const k8sExpiration = useKubernetesVersionExpiration(shootK8sVersion, k8sAutoPatch)
-const { useExpiringWorkerGroups } = useShootMessages(cloudProfile)
 
 const k8sMessage = computed(() => {
   if (!filterMatches('k8s')) {

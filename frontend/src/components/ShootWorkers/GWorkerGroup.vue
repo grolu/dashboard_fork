@@ -246,14 +246,9 @@ SPDX-License-Identifier: Apache-2.0
                       <v-col
                         v-else
                         cols="12"
+                        class="text-medium-emphasis"
                       >
-                        <v-icon
-                          size="small"
-                          class="mr-1"
-                          color="warning"
-                        >
-                          mdi-alert
-                        </v-icon>Image not found in cloud profile
+                        Image details unavailable
                       </v-col>
                     </v-row>
                   </v-card-text>
@@ -371,25 +366,20 @@ SPDX-License-Identifier: Apache-2.0
 </template>
 
 <script>
-import {
-  computed,
-  ref,
-} from 'vue'
+import { ref } from 'vue'
 import { dump as yamlDump } from 'js-yaml'
 
 import { useCloudProfileStore } from '@/store/cloudProfile'
+import { useConfigStore } from '@/store/config'
 
 import GCodeBlock from '@/components/GCodeBlock'
 import GVendorIcon from '@/components/GVendorIcon'
 
 import { useShootItem } from '@/composables/useShootItem'
-import { useMachineImages } from '@/composables/useCloudProfile/useMachineImages.js'
-import { useMachineTypes } from '@/composables/useCloudProfile/useMachineTypes.js'
-import { useVolumeTypes } from '@/composables/useCloudProfile/useVolumeTypes'
-import { useRegions } from '@/composables/useCloudProfile/useRegions.js'
+import { useLightweightCloudProfile } from '@/composables/useCloudProfile/useLightweightCloudProfile.js'
+import { addClassificationHelpers } from '@/composables/helper.js'
 
 import get from 'lodash/get'
-import find from 'lodash/find'
 
 export default {
   components: {
@@ -408,15 +398,19 @@ export default {
   setup () {
     const {
       shootMetadata,
+      shootNamespace,
       shootCloudProfileRef,
     } = useShootItem()
 
     const cloudProfileStore = useCloudProfileStore()
-    const cloudProfile = computed(() => cloudProfileStore.cloudProfileByRef(shootCloudProfileRef.value))
-    const { machineImages } = useMachineImages(cloudProfile)
-    const { useZones } = useRegions(cloudProfile)
-    const { machineTypes } = useMachineTypes(cloudProfile, useZones)
-    const { volumeTypes } = useVolumeTypes(cloudProfile)
+    const configStore = useConfigStore()
+    const {
+      findMachineImageVersion,
+      findMachineType,
+      findVolumeType,
+    } = useLightweightCloudProfile(shootCloudProfileRef, shootNamespace, {
+      cloudProfileStore,
+    })
 
     const tab = ref('overview')
 
@@ -424,9 +418,10 @@ export default {
       tab,
       shootMetadata,
       shootCloudProfileRef,
-      machineImages,
-      machineTypes,
-      volumeTypes,
+      configStore,
+      findMachineImageVersion,
+      findMachineType,
+      findVolumeType,
     }
   },
   computed: {
@@ -443,11 +438,11 @@ export default {
     },
     machineType () {
       const type = get(this.workerGroup, ['machine', 'type'])
-      return find(this.machineTypes, ['name', type])
+      return this.findMachineType(type)
     },
     volumeType () {
       const type = get(this.workerGroup, ['volume', 'type'])
-      return find(this.volumeTypes, ['name', type])
+      return this.findVolumeType(type)
     },
     volumeCardData () {
       const storage = get(this.machineType, ['storage'], {})
@@ -478,7 +473,21 @@ export default {
     },
     machineImage () {
       const { name, version } = get(this.workerGroup, ['machine', 'image'], {})
-      return find(this.machineImages, { name, version })
+      const architecture = get(this.workerGroup, ['machine', 'architecture'], 'amd64')
+      const imageVersion = this.findMachineImageVersion(name, version, architecture)
+      if (!imageVersion) {
+        return undefined
+      }
+      const vendor = this.configStore.vendorDetails({
+        type: 'machineImage',
+        name,
+      })
+      return addClassificationHelpers({
+        ...imageVersion,
+        name,
+        displayName: vendor.displayName || name,
+        icon: vendor.icon,
+      })
     },
     machineCri () {
       return this.workerGroup.cri ?? {}
@@ -502,7 +511,7 @@ export default {
       return yamlDump(this.workerGroup)
     },
     chipColor () {
-      return !this.machineImage || this.machineImage.isDeprecated ? 'warning' : 'primary'
+      return this.machineImage?.isDeprecated ? 'warning' : 'primary'
     },
   },
 }

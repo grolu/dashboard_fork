@@ -61,6 +61,7 @@ SPDX-License-Identifier: Apache-2.0
           :volume-types="volumeTypes"
           :worker="worker"
           :cloud-profile-ref="cloudProfileRef"
+          :cloud-profile-namespace="shootNamespace"
           :field-name="`${workerGroupName} Volume Type`"
         />
       </div>
@@ -213,6 +214,7 @@ export default {
   setup (props) {
     const {
       isNewCluster,
+      shootNamespace,
       cloudProfileRef,
       cloudProfile,
       kubernetesVersion,
@@ -271,6 +273,7 @@ export default {
     return {
       v$: useVuelidate(),
       isNewCluster,
+      shootNamespace,
       cloudProfileRef,
       kubernetesVersion,
       region,

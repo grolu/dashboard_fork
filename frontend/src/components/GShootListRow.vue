@@ -282,11 +282,11 @@ import { useProvideShootItem } from '@/composables/useShootItem'
 import { useProvideShootHelper } from '@/composables/useShootHelper'
 import { formatValue } from '@/composables/useProjectShootCustomFields/helper'
 import { useProjectMetadata } from '@/composables/useProjectMetadata/index.js'
-import { useMachineImages } from '@/composables/useCloudProfile/useMachineImages.js'
+import { useLightweightCloudProfile } from '@/composables/useCloudProfile/useLightweightCloudProfile.js'
+import { addClassificationHelpers } from '@/composables/helper.js'
 
 import { getIssueSince } from '@/utils'
 
-import find from 'lodash/find'
 import some from 'lodash/some'
 import map from 'lodash/map'
 import get from 'lodash/get'
@@ -359,8 +359,11 @@ const seedItem = computed(() => seedStore.seedByName(shootSeedName.value))
 useProvideSeedItem(seedItem)
 useProvideManagedSeedShoot(shootSeedName)
 
-const cloudProfile = computed(() => cloudProfileStore.cloudProfileByRef(shootCloudProfileRef.value))
-const { machineImages } = useMachineImages(cloudProfile)
+const { findMachineImageVersion } = useLightweightCloudProfile(
+  shootCloudProfileRef,
+  shootNamespace,
+  { cloudProfileStore },
+)
 
 const isInfoAvailable = computed(() => {
   // operator not yet updated shoot resource
@@ -450,8 +453,11 @@ const cells = computed(() => {
 const hasShootWorkerGroupWarning = computed(() => {
   return some(shootWorkerGroups.value, workerGroup => {
     const { name, version } = get(workerGroup, ['machine', 'image'], {})
-    const machineImage = find(machineImages.value, { name, version })
-    return !machineImage || machineImage?.isDeprecated
+    const architecture = get(workerGroup, ['machine', 'architecture'], 'amd64')
+    const machineImageVersion = findMachineImageVersion(name, version, architecture)
+    return machineImageVersion
+      ? addClassificationHelpers(machineImageVersion).isDeprecated
+      : false
   })
 })
 

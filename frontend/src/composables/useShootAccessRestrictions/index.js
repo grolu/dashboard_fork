@@ -9,6 +9,7 @@ import { computed } from 'vue'
 import { useCloudProfileStore } from '@/store/cloudProfile'
 
 import { useAccessRestrictions } from '@/composables/useCloudProfile/useAccessRestrictions'
+import { useLightweightCloudProfile } from '@/composables/useCloudProfile/useLightweightCloudProfile.js'
 
 import { NAND } from './helper'
 
@@ -20,6 +21,7 @@ import mapValues from 'lodash/mapValues'
 
 const shootPropertyMappings = Object.freeze({
   cloudProfileRef: ['spec', 'cloudProfile'],
+  namespace: ['metadata', 'namespace'],
   region: ['spec', 'region'],
 })
 
@@ -30,16 +32,24 @@ export const useShootAccessRestrictions = (shootItem, options = {}) => {
 
   const {
     cloudProfileRef,
+    namespace,
     region,
   } = mapValues(shootPropertyMappings, path => {
     return computed(() => get(shootItem.value, path))
   })
 
-  const cloudProfile = computed(() => cloudProfileStore.cloudProfileByRef(cloudProfileRef.value))
+  const {
+    findRegion,
+  } = useLightweightCloudProfile(cloudProfileRef, namespace, {
+    cloudProfileStore,
+  })
   const {
     useAccessRestrictionDefinitions,
     useAccessRestrictionNoItemsText,
-  } = useAccessRestrictions(cloudProfile)
+  } = useAccessRestrictions(undefined, {
+    cloudProfileRef,
+    findRegion,
+  })
 
   const accessRestrictionDefinitionList = useAccessRestrictionDefinitions(region)
 

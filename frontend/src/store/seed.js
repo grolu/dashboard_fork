@@ -77,17 +77,16 @@ export const useSeedStore = defineStore('seed', () => {
     return filter(list.value, predicate)
   }
 
-  function createSeedMatcher (cloudProfile) {
-    if (!cloudProfile) {
+  function createSeedMatcher ({ providerType, seedSelector } = {}) {
+    if (!providerType) {
       return () => false
     }
 
-    const providerType = get(cloudProfile, ['spec', 'type'])
-    const matchLabels = get(cloudProfile, ['spec', 'seedSelector', 'matchLabels'])
+    const matchLabels = get(seedSelector, ['matchLabels'])
     const labelMatcher = !isEmpty(matchLabels)
       ? matches(matchLabels)
       : null
-    const providerTypes = get(cloudProfile, ['spec', 'seedSelector', 'providerTypes'], [providerType])
+    const providerTypes = get(seedSelector, ['providerTypes'], [providerType])
 
     return function matchSeed (seed) {
       const seedProviderType = get(seed, ['spec', 'provider', 'type'])
@@ -120,13 +119,28 @@ export const useSeedStore = defineStore('seed', () => {
       return []
     }
 
+    return seedsForCloudProfileValuesByProject({
+      providerType: get(cloudProfile, ['spec', 'type']),
+      seedSelector: get(cloudProfile, ['spec', 'seedSelector']),
+    }, project)
+  }
+
+  /**
+   * Returns matching seeds from the targeted values available on a lightweight
+   * CloudProfile without requiring an effective CloudProfile resource.
+   */
+  function seedsForCloudProfileValuesByProject (cloudProfileValues, project) {
+    if (!cloudProfileValues?.providerType) {
+      return []
+    }
+
     const seeds = getVisibleAndToleratedSeeds(project)
 
     if (seeds.length === 0) {
       return []
     }
 
-    const seedMatcher = createSeedMatcher(cloudProfile)
+    const seedMatcher = createSeedMatcher(cloudProfileValues)
     return filter(seeds, seedMatcher)
   }
 
@@ -142,6 +156,7 @@ export const useSeedStore = defineStore('seed', () => {
     fetchSeeds,
     seedByName,
     seedsForCloudProfileByProject,
+    seedsForCloudProfileValuesByProject,
     handleEvent: socketEventHandler.listener,
   }
 })

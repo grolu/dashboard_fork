@@ -47,7 +47,6 @@ SPDX-License-Identifier: Apache-2.0
 </template>
 
 <script>
-import { mapActions } from 'pinia'
 import {
   required,
   requiredIf,
@@ -55,14 +54,13 @@ import {
 } from '@vuelidate/validators'
 import { useVuelidate } from '@vuelidate/core'
 
-import { useCloudProfileStore } from '@/store/cloudProfile'
+import { useLightweightCloudProfile } from '@/composables/useCloudProfile/useLightweightCloudProfile.js'
 
 import { getErrorMessages } from '@/utils'
 import { getWorkerProviderConfig } from '@/utils/shoot'
 import { withFieldName } from '@/utils/validators'
 
 import find from 'lodash/find'
-import get from 'lodash/get'
 import set from 'lodash/set'
 import unset from 'lodash/unset'
 
@@ -79,6 +77,9 @@ export default {
     cloudProfileRef: {
       type: Object,
     },
+    cloudProfileNamespace: {
+      type: String,
+    },
     fieldName: {
       type: String,
     },
@@ -86,9 +87,14 @@ export default {
   emits: [
     'updateVolumeType',
   ],
-  setup () {
+  setup (props) {
+    const { getProviderType } = useLightweightCloudProfile(
+      () => props.cloudProfileRef,
+      () => props.cloudProfileNamespace,
+    )
     return {
       v$: useVuelidate(),
+      getProviderType,
     }
   },
   data () {
@@ -134,8 +140,7 @@ export default {
       return ''
     },
     isAWS () {
-      const cloudProfile = this.cloudProfileByRef(this.cloudProfileRef)
-      return get(cloudProfile, ['spec', 'type']) === 'aws'
+      return this.getProviderType() === 'aws'
     },
   },
   watch: {
@@ -148,9 +153,6 @@ export default {
     },
   },
   methods: {
-    ...mapActions(useCloudProfileStore, [
-      'cloudProfileByRef',
-    ]),
     onInputVolumeType () {
       this.v$.worker.volume.type.$touch()
       this.$emit('updateVolumeType')

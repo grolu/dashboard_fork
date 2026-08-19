@@ -5,11 +5,14 @@
 //
 
 import { computed } from 'vue'
+import semver from 'semver'
 
 import { useCloudProfileStore } from '@/store/cloudProfile'
 import { useCredentialStore } from '@/store/credential'
 
 import { useKubernetesVersions } from '@/composables/useCloudProfile/useKubernetesVersions.js'
+import { useLightweightCloudProfile } from '@/composables/useCloudProfile/useLightweightCloudProfile.js'
+import { addClassificationHelpers } from '@/composables/helper.js'
 
 import get from 'lodash/get'
 import uniq from 'lodash/uniq'
@@ -76,25 +79,60 @@ export function useShootSpec (shootItem, options = {}) {
     return get(shootSpec.value, ['kubernetes', 'version'])
   })
 
+  const shootCloudProfileRef = computed(() => {
+    return shootSpec.value.cloudProfile
+  })
+
+  const shootNamespace = computed(() => {
+    return get(shootItem.value, ['metadata', 'namespace'])
+  })
+
+  const {
+    findKubernetesVersion,
+    someKubernetesVersion,
+  } = useLightweightCloudProfile(shootCloudProfileRef, shootNamespace, {
+    cloudProfileStore,
+  })
+
   const cloudProfile = computed(() => cloudProfileStore.cloudProfileByRef(shootCloudProfileRef.value))
-  const { useAvailableKubernetesUpdates, kubernetesVersions } = useKubernetesVersions(cloudProfile)
+  const { useAvailableKubernetesUpdates } = useKubernetesVersions(cloudProfile)
 
   const shootAvailableK8sUpdates = useAvailableKubernetesUpdates(shootK8sVersion)
 
+  function hasLightweightKubernetesUpdate (predicate = () => true) {
+    if (!semver.valid(shootK8sVersion.value)) {
+      return false
+    }
+    return someKubernetesVersion(version => {
+      if (!semver.valid(version.version) || !semver.gt(version.version, shootK8sVersion.value)) {
+        return false
+      }
+      const decoratedVersion = addClassificationHelpers(version)
+      return !decoratedVersion.isExpired && predicate(decoratedVersion)
+    })
+  }
+
+  const shootKubernetesUpdateAvailable = computed(() => {
+    return hasLightweightKubernetesUpdate()
+  })
+
   const shootSupportedPatchAvailable = computed(() => {
-    return !!find(shootAvailableK8sUpdates.value?.patch, 'isSupported')
+    return hasLightweightKubernetesUpdate(version => {
+      return version.isSupported && semver.diff(version.version, shootK8sVersion.value) === 'patch'
+    })
   })
 
   const shootSupportedUpgradeAvailable = computed(() => {
-    return !!find(shootAvailableK8sUpdates.value?.minor, 'isSupported')
+    return hasLightweightKubernetesUpdate(version => {
+      return version.isSupported && semver.diff(version.version, shootK8sVersion.value) === 'minor'
+    })
   })
 
   const shootKubernetesVersionObject = computed(() => {
-    return find(kubernetesVersions.value, ['version', shootK8sVersion.value]) ?? {}
-  })
-
-  const shootCloudProfileRef = computed(() => {
-    return shootSpec.value.cloudProfile
+    const version = findKubernetesVersion(shootK8sVersion.value)
+    return version
+      ? addClassificationHelpers(version)
+      : {}
   })
 
   const shootProviderType = computed(() => {
@@ -185,6 +223,7 @@ export function useShootSpec (shootItem, options = {}) {
     shootCloudProviderBinding,
     shootK8sVersion,
     shootAvailableK8sUpdates,
+    shootKubernetesUpdateAvailable,
     shootKubernetesVersionObject,
     shootSupportedPatchAvailable,
     shootSupportedUpgradeAvailable,

@@ -24,6 +24,8 @@ describe('composables', () => {
 
     const cloudProfileStore = {
       cloudProfileByRef: vi.fn(),
+      namespacedCloudProfileDescriptorByRef: vi.fn(),
+      parentCloudProfileForDescriptor: vi.fn(),
     }
 
     beforeAll(() => {
@@ -31,6 +33,7 @@ describe('composables', () => {
     })
 
     beforeEach(() => {
+      vi.clearAllMocks()
       configStore = useConfigStore()
 
       accessRestrictionDefinition = {
@@ -110,6 +113,39 @@ describe('composables', () => {
           ],
         },
       })
+    })
+
+    it('uses the Shoot namespace for an exact NamespacedCloudProfile region lookup', () => {
+      const descriptor = {
+        metadata: {
+          name: 'cloud-profile-name',
+          namespace: 'garden-a',
+        },
+        spec: {
+          regions: [{
+            name: 'region',
+            accessRestrictions: [{ name: 'foo' }],
+          }],
+        },
+      }
+      shootResource.value.metadata.namespace = 'garden-a'
+      shootResource.value.spec.cloudProfile.kind = 'NamespacedCloudProfile'
+      accessRestrictionDefinition.display = {}
+      for (const option of accessRestrictionDefinition.options) {
+        option.display = {}
+      }
+      cloudProfileStore.namespacedCloudProfileDescriptorByRef.mockReturnValue(descriptor)
+      cloudProfileStore.parentCloudProfileForDescriptor.mockReturnValue(null)
+
+      const { accessRestrictionList } = useShootAccessRestrictions(shootResource, {
+        cloudProfileStore,
+      })
+
+      expect(accessRestrictionList.value).toHaveLength(1)
+      expect(cloudProfileStore.namespacedCloudProfileDescriptorByRef).toHaveBeenCalledWith(
+        shootResource.value.spec.cloudProfile,
+        'garden-a',
+      )
     })
 
     it('should map definition and shoot resources to access restriction data model', () => {

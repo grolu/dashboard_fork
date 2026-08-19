@@ -27,6 +27,7 @@ import { useRegions } from '@/composables/useCloudProfile/useRegions.js'
 import { useOpenStackConstraints } from '@/composables/useCloudProfile/useOpenStackConstraints'
 import { useMetalConstraints } from '@/composables/useCloudProfile/useMetalConstraints.js'
 import { useVolumeTypes } from '@/composables/useCloudProfile/useVolumeTypes'
+import { useLightweightCloudProfile } from '@/composables/useCloudProfile/useLightweightCloudProfile.js'
 
 import { useShootAccessRestrictions } from './useShootAccessRestrictions'
 
@@ -111,6 +112,13 @@ export function createShootHelperComposable (shootItem, options = {}) {
   })
 
   const {
+    getProviderType,
+    getSeedSelector,
+  } = useLightweightCloudProfile(cloudProfileRef, namespace, {
+    cloudProfileStore,
+  })
+
+  const {
     sortedKubernetesVersions,
     useKubernetesVersionIsNotLatestPatch,
   } = useKubernetesVersions(cloudProfile)
@@ -156,11 +164,16 @@ export function createShootHelperComposable (shootItem, options = {}) {
   })
 
   const seeds = computed(() => {
-    const cloudProfile = cloudProfileStore.cloudProfileByRef(cloudProfileRef.value)
-    return seedStore.seedsForCloudProfileByProject(cloudProfile, project.value)
+    return seedStore.seedsForCloudProfileValuesByProject({
+      providerType: getProviderType(),
+      seedSelector: getSeedSelector(),
+    }, project.value)
   })
 
   const isFailureToleranceTypeZoneSupported = computed(() => {
+    if (!getProviderType()) {
+      return true
+    }
     const seedList = seedName.value
       ? [seed.value]
       : seeds.value

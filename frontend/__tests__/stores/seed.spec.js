@@ -158,6 +158,19 @@ describe('stores', () => {
         expect(matchingSeeds[0].metadata.name).toBe('aws-seed-1')
       })
 
+      it('should match seeds from targeted lightweight cloud profile values', () => {
+        const matchingSeeds = seedStore.seedsForCloudProfileValuesByProject({
+          providerType: 'aws',
+          seedSelector: {
+            matchLabels: {
+              environment: 'production',
+            },
+          },
+        }, mockProject)
+
+        expect(matchingSeeds.map(seed => seed.metadata.name)).toEqual(['aws-seed-1'])
+      })
+
       it('should return seeds matching cloud profile with multiple provider types', () => {
         const cloudProfile = {
           metadata: {

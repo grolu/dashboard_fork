@@ -130,7 +130,7 @@ export default {
       shootK8sVersion,
       shootSupportedPatchAvailable,
       shootSupportedUpgradeAvailable,
-      shootAvailableK8sUpdates,
+      shootKubernetesUpdateAvailable,
       shootKubernetesVersionObject,
     } = useShootItem()
 
@@ -139,7 +139,7 @@ export default {
       shootK8sVersion,
       shootSupportedPatchAvailable,
       shootSupportedUpgradeAvailable,
-      shootAvailableK8sUpdates,
+      shootKubernetesUpdateAvailable,
       shootKubernetesVersionObject,
     }
   },
@@ -159,6 +159,9 @@ export default {
       return this.shootKubernetesVersionObject.isDeprecated ? 'warning' : 'primary'
     },
     tooltipText () {
+      if (!this.shootKubernetesVersionObject.version) {
+        return 'Kubernetes version details unavailable'
+      }
       if (this.shootKubernetesVersionObject.isDeprecated) {
         return 'Kubernetes version is deprecated'
       }
@@ -168,7 +171,7 @@ export default {
       if (this.shootSupportedUpgradeAvailable) {
         return 'Kubernetes upgrade available'
       }
-      if (this.shootAvailableK8sUpdates) {
+      if (this.shootKubernetesUpdateAvailable) {
         return 'Updates available'
       }
       return 'Kubernetes version up to date'

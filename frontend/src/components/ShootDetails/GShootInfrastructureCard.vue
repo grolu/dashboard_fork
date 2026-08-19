@@ -261,7 +261,6 @@ SPDX-License-Identifier: Apache-2.0
 
 <script>
 import { mapState } from 'pinia'
-import { computed } from 'vue'
 
 import { useCloudProfileStore } from '@/store/cloudProfile'
 import { useAuthzStore } from '@/store/authz'
@@ -283,19 +282,13 @@ import GCredentialConfiguration from '@/components/Credentials/GShootCredentialC
 import { useShootResources } from '@/composables/useShootResources'
 import { useShootItem } from '@/composables/useShootItem'
 import { useCloudProviderBinding } from '@/composables/credential/useCloudProviderBinding'
-import { useOpenStackConstraints } from '@/composables/useCloudProfile/useOpenStackConstraints'
+import { useLightweightCloudProfile } from '@/composables/useCloudProfile/useLightweightCloudProfile.js'
 import {
   getDnsPrimaryProviderCredentialsRef,
   dnsExtensionProviderResourceName,
 } from '@/composables/credential/helper'
 
-import {
-  wildcardObjectsFromStrings,
-  bestMatchForString,
-} from '@/utils/wildcard'
-
 import head from 'lodash/head'
-import map from 'lodash/map'
 import get from 'lodash/get'
 import find from 'lodash/find'
 
@@ -348,10 +341,11 @@ export default {
       openStackDomainName,
     } = useCloudProviderBinding(shootCloudProviderBinding)
 
-    const cloudProfile = computed(() => cloudProfileStore.cloudProfileByRef(shootCloudProfileRef.value))
-    const { useFloatingPools } = useOpenStackConstraints(cloudProfile)
-
-    const availableFloatingPools = useFloatingPools(shootRegion, openStackDomainName)
+    const { findOpenStackFloatingPool } = useLightweightCloudProfile(
+      shootCloudProfileRef,
+      shootNamespace,
+      { cloudProfileStore },
+    )
 
     return {
       shootItem,
@@ -377,7 +371,8 @@ export default {
       dnsExtensionProviderResourceName,
       credential,
       isSharedBinding,
-      availableFloatingPools,
+      findOpenStackFloatingPool,
+      openStackDomainName,
       shootSecretBindingName,
       credentialStore,
     }
@@ -406,16 +401,12 @@ export default {
         return shootLBClasses
       }
 
-      const floatingPoolWildCardObjects = wildcardObjectsFromStrings(map(this.availableFloatingPools, 'name'))
-
       const shootFloatingPoolName = get(this.shootItem, ['spec', 'provider', 'infrastructureConfig', 'floatingPoolName'])
-      const floatingPoolWildcardName = bestMatchForString(floatingPoolWildCardObjects, shootFloatingPoolName)
-
-      if (!floatingPoolWildcardName) {
-        return
-      }
-
-      const shootFloatingPool = find(this.availableFloatingPools, ['name', floatingPoolWildcardName.originalValue])
+      const shootFloatingPool = this.findOpenStackFloatingPool(
+        shootFloatingPoolName,
+        this.shootRegion,
+        this.openStackDomainName,
+      )
       return get(shootFloatingPool, ['loadBalancerClasses'])
     },
     defaultLoadbalancerClass () {
