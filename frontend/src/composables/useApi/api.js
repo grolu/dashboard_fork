@@ -7,8 +7,8 @@ import { useAppStore } from '@/store/app'
 
 import { fetchWrapper } from './fetch'
 
-async function request (method, url, data) {
-  const response = await fetchWrapper(url, { method, body: data })
+async function request (method, url, data, options) {
+  const response = await fetchWrapper(url, { ...options, method, body: data })
   const { headers } = response
   if (headers.warning) {
     const appStore = useAppStore()
@@ -17,8 +17,8 @@ async function request (method, url, data) {
   return response
 }
 
-function getResource (url) {
-  return request('GET', url)
+function getResource (url, options) {
+  return request('GET', url, undefined, options)
 }
 
 function withQuery (url, query = {}) {
@@ -250,6 +250,12 @@ export function getCloudProfiles () {
 
 export function getNamespacedCloudProfiles () {
   return getResource('/api/namespacedcloudprofiles')
+}
+
+export function getNamespacedCloudProfileStatus ({ namespace, name, signal }) {
+  namespace = encodeURIComponent(namespace)
+  name = encodeURIComponent(name)
+  return getResource(`/api/namespaces/${namespace}/namespacedcloudprofiles/${name}/status`, { signal })
 }
 
 /* Seeds */
@@ -485,6 +491,7 @@ export default {
   createShootAdminKubeconfig,
   getCloudProfiles,
   getNamespacedCloudProfiles,
+  getNamespacedCloudProfileStatus,
   getSeeds,
   getSeedStats,
   getSeedStat,

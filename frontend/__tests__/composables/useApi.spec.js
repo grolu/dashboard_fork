@@ -69,6 +69,32 @@ describe('composables', () => {
         })
       })
 
+      describe('#getNamespacedCloudProfileStatus', () => {
+        it('should fetch one full namespaced profile with cancellation support', async () => {
+          fetch.mockResponseOnce(JSON.stringify({ metadata: { name: 'profile/name' } }), {
+            headers: {
+              'content-type': 'application/json; charset=UTF-8',
+            },
+          })
+          const abortController = new AbortController()
+
+          const res = await api.getNamespacedCloudProfileStatus({
+            namespace: 'garden project',
+            name: 'profile/name',
+            signal: abortController.signal,
+          })
+
+          expect(res.status).toBe(200)
+          expect(fetch).toBeCalledTimes(1)
+          const [req] = fetch.mock.calls[0]
+          expect(req.url).toBe('http://localhost:3000/api/namespaces/garden%20project/namespacedcloudprofiles/profile%2Fname/status')
+          expect(req.signal.aborted).toBe(false)
+
+          abortController.abort()
+          expect(req.signal.aborted).toBe(true)
+        })
+      })
+
       describe('#getConfiguration', () => {
         it('should fetch the configuration', async () => {
           const { getConfiguration } = api
