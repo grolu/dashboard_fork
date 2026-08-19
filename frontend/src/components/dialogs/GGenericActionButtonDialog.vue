@@ -28,6 +28,7 @@ SPDX-License-Identifier: Apache-2.0
         :max-height="maxHeight"
         :confirm-value="confirmValue"
         :disable-confirm-input-focus="disableConfirmInputFocus"
+        :valid="valid"
       >
         <template #caption>
           {{ caption }}
@@ -107,6 +108,10 @@ export default {
     disabled: {
       type: Boolean,
       default: false,
+    },
+    valid: {
+      type: Boolean,
+      default: true,
     },
     disableConfirmInputFocus: {
       type: Boolean,

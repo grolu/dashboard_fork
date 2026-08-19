@@ -89,6 +89,8 @@ import semver from 'semver'
 import GExternalLink from '@/components/GExternalLink.vue'
 
 import { useShootItem } from '@/composables/useShootItem'
+import { useProvidedCloudProfile } from '@/composables/useCloudProfile/useCloudProfile'
+import { useKubernetesVersions } from '@/composables/useCloudProfile/useKubernetesVersions'
 
 import {
   withFieldName,
@@ -103,6 +105,7 @@ import head from 'lodash/head'
 import get from 'lodash/get'
 import join from 'lodash/join'
 import filter from 'lodash/filter'
+import find from 'lodash/find'
 
 export default {
   components: {
@@ -119,12 +122,20 @@ export default {
   ],
   setup (props, { emit }) {
     const {
-      shootKubernetesVersionObject,
-      shootAvailableK8sUpdates,
+      shootK8sVersion,
       shootSecretBindingName,
       shootName,
       shootNamespace,
     } = useShootItem()
+    const { cloudProfile } = useProvidedCloudProfile()
+    const {
+      kubernetesVersions,
+      useAvailableKubernetesUpdates,
+    } = useKubernetesVersions(cloudProfile)
+    const shootAvailableK8sUpdates = useAvailableKubernetesUpdates(shootK8sVersion)
+    const shootKubernetesVersionObject = computed(() => {
+      return find(kubernetesVersions.value, ['version', shootK8sVersion.value]) ?? {}
+    })
 
     const snackbar = ref(false)
     const selectedItem = computed({

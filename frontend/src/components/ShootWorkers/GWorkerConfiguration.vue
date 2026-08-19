@@ -15,13 +15,15 @@ SPDX-License-Identifier: Apache-2.0
     disable-confirm-input-focus
     max-height="80vh"
     :disabled="!hasShootWorkerGroups"
-    @before-dialog-opened="setShootManifest(shootItem)"
+    :valid="isCloudProfileReady"
+    @before-dialog-opened="onBeforeConfigurationDialogOpened"
     @dialog-opened="onConfigurationDialogOpened"
   >
     <template #header>
       <v-tabs
         v-model="tab"
         color="primary"
+        :disabled="!isCloudProfileReady"
       >
         <v-tab
           key="overview"
@@ -38,7 +40,41 @@ SPDX-License-Identifier: Apache-2.0
       </v-tabs>
     </template>
     <template #content>
-      <v-window v-model="tab">
+      <v-card-text
+        v-if="isCloudProfileLoading"
+        data-test="cloud-profile-loading"
+        class="py-6 text-center"
+      >
+        <v-progress-circular
+          color="primary"
+          indeterminate
+        />
+        <div class="mt-3">
+          Loading cloud profile…
+        </div>
+      </v-card-text>
+      <v-card-text v-else-if="cloudProfileError">
+        <v-alert
+          data-test="cloud-profile-error"
+          type="error"
+          variant="tonal"
+        >
+          <div>{{ cloudProfileLoadErrorMessage }}</div>
+          <v-btn
+            data-test="cloud-profile-retry"
+            class="mt-3"
+            color="primary"
+            variant="text"
+            @click="reloadCloudProfile"
+          >
+            Retry
+          </v-btn>
+        </v-alert>
+      </v-card-text>
+      <v-window
+        v-else-if="cloudProfile"
+        v-model="tab"
+      >
         <v-window-item
           ref="overviewTab"
           value="overview"
@@ -69,7 +105,7 @@ SPDX-License-Identifier: Apache-2.0
     <template #footer>
       <v-expand-transition>
         <v-alert
-          v-if="newZonesYaml"
+          v-if="isCloudProfileReady && newZonesYaml"
           v-model="newZonesAlert"
           type="warning"
           variant="tonal"
@@ -113,9 +149,10 @@ import GCodeBlock from '@/components/GCodeBlock'
 import GManageWorkers from '@/components/ShootWorkers/GManageWorkers'
 import GYamlEditor from '@/components/GYamlEditor.vue'
 
-import { useShootContext } from '@/composables/useShootContext'
+import { useProvideShootContext } from '@/composables/useShootContext'
 import { useShootItem } from '@/composables/useShootItem'
 import { useShootEditor } from '@/composables/useShootEditor'
+import { useProvideCloudProfile } from '@/composables/useCloudProfile/useCloudProfile'
 
 import { errorDetailsFromError } from '@/utils/error'
 import { v4 as uuidv4 } from '@/utils/uuid'
@@ -142,15 +179,28 @@ export default {
       shootItem,
       shootNamespace,
       shootName,
+      shootCloudProfileRef,
       hasShootWorkerGroups,
     } = useShootItem()
+
+    const workflowActive = ref(false)
+    const {
+      cloudProfile,
+      isLoading: isCloudProfileLoading,
+      error: cloudProfileError,
+      reload: reloadCloudProfile,
+    } = useProvideCloudProfile(shootCloudProfileRef, shootNamespace, {
+      enabled: workflowActive,
+    })
 
     const {
       providerWorkers,
       providerInfrastructureConfigNetworksZones,
       initialProviderInfrastructureConfigNetworksZones,
       setShootManifest,
-    } = useShootContext()
+    } = useProvideShootContext({
+      cloudProfile,
+    })
 
     const injectionKey = 'shoot-worker-editor'
     const lazyTab = ref('overview')
@@ -220,6 +270,11 @@ export default {
       shootNamespace,
       shootName,
       hasShootWorkerGroups,
+      workflowActive,
+      cloudProfile,
+      isCloudProfileLoading,
+      cloudProfileError,
+      reloadCloudProfile,
       providerWorkers,
       providerInfrastructureConfigNetworksZones,
       setShootManifest,
@@ -270,17 +325,39 @@ export default {
         ? 'It is not possible to add worker groups to workerless clusters'
         : undefined
     },
+    isCloudProfileReady () {
+      return !!this.cloudProfile && !this.isCloudProfileLoading && !this.cloudProfileError
+    },
+    cloudProfileLoadErrorMessage () {
+      if (!this.cloudProfileError?.response && this.cloudProfileError?.message) {
+        return this.cloudProfileError.message
+      }
+      return errorDetailsFromError(this.cloudProfileError).detailedMessage
+    },
   },
   methods: {
-    async onConfigurationDialogOpened () {
+    onBeforeConfigurationDialogOpened () {
       this.open = true
+      this.workflowActive = true
+      this.setShootManifest(this.shootItem)
+    },
+    closeConfigurationDialog () {
+      this.open = false
+      this.workflowActive = false
+      this.lazyTab = 'overview'
+      this.componentKey = uuidv4() // force re-render
+    },
+    async onConfigurationDialogOpened () {
       const confirmed = await this.$refs.actionDialog.waitForDialogClosed()
-      if (confirmed) {
-        await this.updateConfiguration()
-      } else {
-        this.open = false
-        this.lazyTab = 'overview'
-        this.componentKey = uuidv4() // force re-render
+      if (!confirmed) {
+        this.closeConfigurationDialog()
+        return
+      }
+      if (!this.isCloudProfileReady) {
+        return
+      }
+      if (await this.updateConfiguration()) {
+        this.closeConfigurationDialog()
       }
     },
     async updateConfiguration () {
@@ -294,9 +371,7 @@ export default {
           name: this.shootName,
           data: get(this.editorData, ['spec', 'provider']),
         })
-        this.open = false
-        this.lazyTab = 'overview'
-        this.componentKey = uuidv4() // force re-render
+        return true
       } catch (err) {
         const errorMessage = 'Could not save worker configuration'
         let detailedErrorMessage
@@ -308,6 +383,7 @@ export default {
         }
         this.$refs.actionDialog.setError({ errorMessage, detailedErrorMessage })
         this.logger.error(errorMessage, detailedErrorMessage, err)
+        return false
       }
     },
   },

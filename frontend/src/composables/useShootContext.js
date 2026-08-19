@@ -101,6 +101,7 @@ export function createShootContextComposable (options = {}) {
     seedStore = useSeedStore(),
     api,
     loadFullCloudProfile = false,
+    cloudProfile: providedCloudProfile,
   } = options
 
   function hasEnabledAddons (value) {
@@ -254,6 +255,8 @@ export function createShootContextComposable (options = {}) {
       ...(api && { api }),
     })
     : null
+
+  const effectiveCloudProfile = providedCloudProfile ?? fullCloudProfileState?.cloudProfile
 
   function resetCloudProfileDependendValues () {
     resetNetworkingType()
@@ -957,7 +960,7 @@ export function createShootContextComposable (options = {}) {
     getAccessRestrictionPatchData,
   } = useShootAccessRestrictions(manifest, {
     cloudProfileStore,
-    cloudProfile: fullCloudProfileState?.cloudProfile,
+    cloudProfile: effectiveCloudProfile,
   })
 
   const {
@@ -996,7 +999,7 @@ export function createShootContextComposable (options = {}) {
     gardenerExtensionStore,
     credentialStore,
     seedStore,
-    cloudProfile: fullCloudProfileState?.cloudProfile,
+    cloudProfile: effectiveCloudProfile,
   })
 
   if (fullCloudProfileState) {

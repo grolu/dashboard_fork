@@ -10,7 +10,6 @@ import semver from 'semver'
 import { useCloudProfileStore } from '@/store/cloudProfile'
 import { useCredentialStore } from '@/store/credential'
 
-import { useKubernetesVersions } from '@/composables/useCloudProfile/useKubernetesVersions.js'
 import { useLightweightCloudProfile } from '@/composables/useCloudProfile/useLightweightCloudProfile.js'
 import { addClassificationHelpers } from '@/composables/helper.js'
 
@@ -93,11 +92,6 @@ export function useShootSpec (shootItem, options = {}) {
   } = useLightweightCloudProfile(shootCloudProfileRef, shootNamespace, {
     cloudProfileStore,
   })
-
-  const cloudProfile = computed(() => cloudProfileStore.cloudProfileByRef(shootCloudProfileRef.value))
-  const { useAvailableKubernetesUpdates } = useKubernetesVersions(cloudProfile)
-
-  const shootAvailableK8sUpdates = useAvailableKubernetesUpdates(shootK8sVersion)
 
   function hasLightweightKubernetesUpdate (predicate = () => true) {
     if (!semver.valid(shootK8sVersion.value)) {
@@ -222,7 +216,6 @@ export function useShootSpec (shootItem, options = {}) {
     shootCredentialsBindingName,
     shootCloudProviderBinding,
     shootK8sVersion,
-    shootAvailableK8sUpdates,
     shootKubernetesUpdateAvailable,
     shootKubernetesVersionObject,
     shootSupportedPatchAvailable,

@@ -95,9 +95,9 @@ describe('useCloudProfile', () => {
   let cloudProfileStore
   let scopes
 
-  function createComposable (cloudProfileRef, namespace = ref('garden-a')) {
+  function createComposable (cloudProfileRef, namespace = ref('garden-a'), options = {}) {
     const scope = effectScope()
-    const composable = scope.run(() => useCloudProfile(cloudProfileRef, namespace))
+    const composable = scope.run(() => useCloudProfile(cloudProfileRef, namespace, options))
     scopes.push(scope)
     return { composable, scope }
   }
@@ -251,6 +251,54 @@ describe('useCloudProfile', () => {
     expect(composable.error.value).toBeNull()
   })
 
+  it('loads only while enabled and starts a fresh request after every release', async () => {
+    const fullCloudProfile = createFullNamespacedCloudProfile('garden-a')
+    const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
+      .mockResolvedValue({ data: fullCloudProfile })
+    const cloudProfileRef = ref({ kind: 'NamespacedCloudProfile', name: 'custom' })
+    const enabled = ref(false)
+    const { composable } = createComposable(cloudProfileRef, ref('garden-a'), { enabled })
+
+    expect(getNamespacedCloudProfileStatus).not.toHaveBeenCalled()
+    expect(composable.cloudProfile.value).toBeNull()
+
+    enabled.value = true
+    await flushPromises()
+
+    expect(getNamespacedCloudProfileStatus).toHaveBeenCalledTimes(1)
+    expect(composable.cloudProfile.value).toBe(fullCloudProfile)
+
+    enabled.value = false
+
+    expect(composable.cloudProfile.value).toBeNull()
+    expect(composable.error.value).toBeNull()
+    expect(composable.isLoading.value).toBe(false)
+
+    enabled.value = true
+    await flushPromises()
+
+    expect(getNamespacedCloudProfileStatus).toHaveBeenCalledTimes(2)
+    expect(composable.cloudProfile.value).toBe(fullCloudProfile)
+  })
+
+  it('resolves an enabled regular CloudProfile without a status request and releases it when disabled', () => {
+    const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
+    const cloudProfileRef = ref({ kind: 'CloudProfile', name: 'parent' })
+    const enabled = ref(false)
+    const { composable } = createComposable(cloudProfileRef, ref('garden-a'), { enabled })
+
+    expect(composable.cloudProfile.value).toBeNull()
+
+    enabled.value = true
+
+    expect(composable.cloudProfile.value).toBe(cloudProfileStore.list[0])
+    expect(getNamespacedCloudProfileStatus).not.toHaveBeenCalled()
+
+    enabled.value = false
+
+    expect(composable.cloudProfile.value).toBeNull()
+  })
+
   it('does not write a loaded full NamespacedCloudProfile to Pinia state', async () => {
     const fullCloudProfile = createFullNamespacedCloudProfile('garden-a')
     vi.spyOn(api, 'getNamespacedCloudProfileStatus').mockResolvedValue({ data: fullCloudProfile })
@@ -274,26 +322,28 @@ describe('useCloudProfile', () => {
       .mockResolvedValue({ data: fullCloudProfile })
     const cloudProfileRef = ref({ kind: 'NamespacedCloudProfile', name: 'custom' })
     let providedComposable
-    let injectedComposable
+    const injectedComposables = []
 
     const ChildComponent = defineComponent({
       setup () {
-        injectedComposable = useProvidedCloudProfile()
+        injectedComposables.push(useProvidedCloudProfile())
         return () => null
       },
     })
     const OwnerComponent = defineComponent({
       setup () {
         providedComposable = useProvideCloudProfile(cloudProfileRef, ref('garden-a'))
-        return () => h(ChildComponent)
+        return () => h('div', [h(ChildComponent), h(ChildComponent)])
       },
     })
 
     const wrapper = mount(OwnerComponent)
     await flushPromises()
 
-    expect(injectedComposable).toBe(providedComposable)
-    expect(injectedComposable.cloudProfile.value).toBe(fullCloudProfile)
+    expect(injectedComposables).toHaveLength(2)
+    expect(injectedComposables[0]).toBe(providedComposable)
+    expect(injectedComposables[1]).toBe(providedComposable)
+    expect(injectedComposables[0].cloudProfile.value).toBe(fullCloudProfile)
     expect(getNamespacedCloudProfileStatus).toHaveBeenCalledTimes(1)
 
     wrapper.unmount()

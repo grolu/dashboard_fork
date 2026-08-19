@@ -30,13 +30,14 @@ const cloudProfileInjectionKey = Symbol('cloud-profile')
  *
  * @param {object} cloudProfileRef - Maybe-ref CloudProfile reference
  * @param {string} namespace - Maybe-ref namespace used to resolve a NamespacedCloudProfile
- * @param {object} options - Optional dependencies
+ * @param {object} options - Optional dependencies and activation state
  * @returns {object} Full CloudProfile state and reload function
  */
 export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
   const {
     api = useApi(),
     cloudProfileStore = useCloudProfileStore(),
+    enabled = true,
   } = options
 
   const cloudProfile = shallowRef(null)
@@ -46,6 +47,15 @@ export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
   let abortController
   let generation = 0
   let disposed = false
+
+  function release () {
+    generation++
+    abortController?.abort()
+    abortController = undefined
+    cloudProfile.value = null
+    error.value = null
+    isLoading.value = false
+  }
 
   function resolveTarget () {
     const resolvedCloudProfileRef = toValue(cloudProfileRef)
@@ -81,6 +91,11 @@ export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
   }
 
   function load (target = resolveTarget()) {
+    if (!toValue(enabled)) {
+      release()
+      return Promise.resolve(null)
+    }
+
     const requestGeneration = ++generation
     abortController?.abort()
     abortController = undefined
@@ -137,8 +152,12 @@ export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
       })
   }
 
-  watch(resolveTarget, target => {
-    load(target)
+  watch([() => toValue(enabled), resolveTarget], ([isEnabled, target]) => {
+    if (isEnabled) {
+      load(target)
+    } else {
+      release()
+    }
   }, {
     flush: 'sync',
     immediate: true,
@@ -147,12 +166,7 @@ export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
   if (getCurrentScope()) {
     onScopeDispose(() => {
       disposed = true
-      generation++
-      abortController?.abort()
-      abortController = undefined
-      cloudProfile.value = null
-      error.value = null
-      isLoading.value = false
+      release()
     })
   }
 

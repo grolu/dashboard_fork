@@ -16,6 +16,7 @@ SPDX-License-Identifier: Apache-2.0
     :width="width"
     :max-height="maxHeight"
     :loading="loading"
+    :valid="valid"
     :disabled="isDisabled"
     :disable-confirm-input-focus="disableConfirmInputFocus"
     :text="text"
@@ -82,6 +83,10 @@ export default {
     loading: {
       type: Boolean,
       default: false,
+    },
+    valid: {
+      type: Boolean,
+      default: true,
     },
     disabled: {
       type: Boolean,
