@@ -7,115 +7,155 @@ SPDX-License-Identifier: Apache-2.0
 <template>
   <div
     v-if="sortedInfraProviderTypeList.length"
-    class="d-flex flex-column justify-space-between fill-height"
+    class="d-flex flex-column justify-space-between fill-height position-relative"
   >
-    <v-container
-      class="overflow-auto"
-      fluid
+    <v-overlay
+      data-test="cloud-profile-loading"
+      :model-value="isCloudProfileLoading"
+      contained
+      persistent
+      class="align-center justify-center"
     >
-      <v-card>
-        <g-toolbar title="Infrastructure" />
-        <v-card-text>
-          <g-new-shoot-select-infrastructure />
-        </v-card-text>
-      </v-card>
-      <v-card
-        class="mt-4"
-      >
-        <g-toolbar title="Cluster Details" />
-        <v-card-text>
-          <g-new-shoot-details />
-        </v-card-text>
-      </v-card>
-      <v-card class="mt-4">
-        <g-toolbar title="Infrastructure Details" />
-        <v-card-text>
-          <g-new-shoot-infrastructure-details />
-        </v-card-text>
-      </v-card>
-      <v-card class="mt-4">
-        <g-toolbar title="Control Plane High Availability" />
-        <v-card-text>
-          <g-manage-control-plane-high-availability />
-        </v-card-text>
-      </v-card>
-      <v-card class="mt-4">
-        <g-toolbar title="DNS Configuration" />
-        <v-card-text>
-          <g-manage-dns />
-        </v-card-text>
-      </v-card>
-      <v-card
-        v-if="accessRestriction"
-        class="mt-4"
-      >
-        <g-toolbar title="Access Restrictions" />
-        <v-card-text>
-          <g-access-restrictions />
-        </v-card-text>
-      </v-card>
-      <v-card
-        v-show="!workerless"
-        class="mt-4"
-      >
-        <g-toolbar
-          title="Worker"
+      <div class="d-flex flex-column align-center ga-3">
+        <v-progress-circular
+          indeterminate
+          size="64"
         />
-        <v-card-text>
-          <g-manage-workers />
-        </v-card-text>
-      </v-card>
-      <v-card
-        v-show="!workerless"
-        class="mt-4"
-      >
-        <g-toolbar
-          title="Add-Ons (not actively monitored and available for clusters with purpose evaluation only)"
-        />
-        <v-card-text>
-          <g-manage-addons create-mode />
-        </v-card-text>
-      </v-card>
-      <v-card class="mt-4">
-        <g-toolbar title="Maintenance" />
-        <v-card-text>
-          <g-maintenance-time />
-          <g-maintenance-components
-            v-model:auto-update-kubernetes-version="maintenanceAutoUpdateKubernetesVersion"
-            v-model:auto-update-machine-image-version="maintenanceAutoUpdateMachineImageVersion"
-            :workerless="workerless"
-          />
-        </v-card-text>
-      </v-card>
-      <v-card class="mt-4">
-        <g-toolbar title="Hibernation" />
-        <v-card-text>
-          <g-manage-hibernation-schedule />
-        </v-card-text>
-      </v-card>
-    </v-container>
-    <div>
-      <g-message
-        v-if="errorMessage"
-        v-model:message="errorMessage"
-        v-model:detailed-message="detailedErrorMessage"
-        color="error"
-        class="ma-0"
-        tile
-      />
-      <v-divider />
-      <div class="d-flex align-center justify-end toolbar">
-        <v-divider vertical />
-        <v-btn
-          variant="text"
-          color="primary"
-          @click.stop="createClicked()"
-        >
-          Create
-        </v-btn>
-        <g-confirm-dialog ref="confirmDialog" />
+        <span>Loading selected cloud profile…</span>
       </div>
-    </div>
+    </v-overlay>
+    <v-container
+      v-if="cloudProfileError"
+      class="pa-6"
+    >
+      <v-alert
+        data-test="cloud-profile-error"
+        type="error"
+        title="Failed to load the selected cloud profile"
+      >
+        <div>{{ cloudProfileLoadErrorMessage }}</div>
+        <v-btn
+          data-test="cloud-profile-retry"
+          class="mt-3"
+          color="error"
+          variant="outlined"
+          prepend-icon="mdi-reload"
+          @click="reloadCloudProfile()"
+        >
+          Retry
+        </v-btn>
+      </v-alert>
+    </v-container>
+    <template v-else>
+      <v-container
+        data-test="shoot-creation-form"
+        class="overflow-auto"
+        fluid
+      >
+        <v-card>
+          <g-toolbar title="Infrastructure" />
+          <v-card-text>
+            <g-new-shoot-select-infrastructure />
+          </v-card-text>
+        </v-card>
+        <v-card
+          class="mt-4"
+        >
+          <g-toolbar title="Cluster Details" />
+          <v-card-text>
+            <g-new-shoot-details />
+          </v-card-text>
+        </v-card>
+        <v-card class="mt-4">
+          <g-toolbar title="Infrastructure Details" />
+          <v-card-text>
+            <g-new-shoot-infrastructure-details />
+          </v-card-text>
+        </v-card>
+        <v-card class="mt-4">
+          <g-toolbar title="Control Plane High Availability" />
+          <v-card-text>
+            <g-manage-control-plane-high-availability />
+          </v-card-text>
+        </v-card>
+        <v-card class="mt-4">
+          <g-toolbar title="DNS Configuration" />
+          <v-card-text>
+            <g-manage-dns />
+          </v-card-text>
+        </v-card>
+        <v-card
+          v-if="accessRestriction"
+          class="mt-4"
+        >
+          <g-toolbar title="Access Restrictions" />
+          <v-card-text>
+            <g-access-restrictions />
+          </v-card-text>
+        </v-card>
+        <v-card
+          v-show="!workerless"
+          class="mt-4"
+        >
+          <g-toolbar
+            title="Worker"
+          />
+          <v-card-text>
+            <g-manage-workers />
+          </v-card-text>
+        </v-card>
+        <v-card
+          v-show="!workerless"
+          class="mt-4"
+        >
+          <g-toolbar
+            title="Add-Ons (not actively monitored and available for clusters with purpose evaluation only)"
+          />
+          <v-card-text>
+            <g-manage-addons create-mode />
+          </v-card-text>
+        </v-card>
+        <v-card class="mt-4">
+          <g-toolbar title="Maintenance" />
+          <v-card-text>
+            <g-maintenance-time />
+            <g-maintenance-components
+              v-model:auto-update-kubernetes-version="maintenanceAutoUpdateKubernetesVersion"
+              v-model:auto-update-machine-image-version="maintenanceAutoUpdateMachineImageVersion"
+              :workerless="workerless"
+            />
+          </v-card-text>
+        </v-card>
+        <v-card class="mt-4">
+          <g-toolbar title="Hibernation" />
+          <v-card-text>
+            <g-manage-hibernation-schedule />
+          </v-card-text>
+        </v-card>
+      </v-container>
+      <div>
+        <g-message
+          v-if="errorMessage"
+          v-model:message="errorMessage"
+          v-model:detailed-message="detailedErrorMessage"
+          color="error"
+          class="ma-0"
+          tile
+        />
+        <v-divider />
+        <div class="d-flex align-center justify-end toolbar">
+          <v-divider vertical />
+          <v-btn
+            variant="text"
+            color="primary"
+            @click.stop="createClicked()"
+          >
+            Create
+          </v-btn>
+          <g-confirm-dialog ref="confirmDialog" />
+        </div>
+      </div>
+    </template>
   </div>
   <v-alert
     v-else
@@ -206,6 +246,10 @@ export default {
       workerless,
       maintenanceAutoUpdateKubernetesVersion,
       maintenanceAutoUpdateMachineImageVersion,
+      cloudProfile,
+      isCloudProfileLoading,
+      cloudProfileError,
+      reloadCloudProfile,
     } = useShootContext()
 
     return {
@@ -217,6 +261,10 @@ export default {
       workerless,
       maintenanceAutoUpdateKubernetesVersion,
       maintenanceAutoUpdateMachineImageVersion,
+      cloudProfile,
+      isCloudProfileLoading,
+      cloudProfileError,
+      reloadCloudProfile,
     }
   },
   data () {
@@ -233,12 +281,24 @@ export default {
     ...mapState(useCloudProfileStore, [
       'sortedInfraProviderTypeList',
     ]),
+    cloudProfileLoadErrorMessage () {
+      if (!this.cloudProfileError?.response && this.cloudProfileError?.message) {
+        return this.cloudProfileError.message
+      }
+      return errorDetailsFromError(this.cloudProfileError).detailedMessage
+    },
   },
   methods: {
     ...mapActions(useAppStore, [
       'setSuccess',
     ]),
     async createClicked () {
+      if (this.isCloudProfileLoading || this.cloudProfileError || !this.cloudProfile) {
+        this.errorMessage = 'The selected cloud profile is not available.'
+        this.detailedErrorMessage = 'Retry loading the selected cloud profile before creating the cluster.'
+        return
+      }
+
       if (this.v$.$invalid) {
         await this.v$.$validate()
         const message = messageFromErrors(this.v$.$errors)

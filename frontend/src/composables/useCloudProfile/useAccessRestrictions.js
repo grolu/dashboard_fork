@@ -12,6 +12,8 @@ import {
 
 import { useConfigStore } from '@/store/config'
 
+import { getCloudProfileSpec } from '@/utils'
+
 import get from 'lodash/get'
 import find from 'lodash/find'
 import filter from 'lodash/filter'
@@ -51,7 +53,7 @@ export function useAccessRestrictions (cloudProfile, options = {}) {
   function accessRestrictions (region) {
     const regionData = findRegion
       ? findRegion(region)
-      : find(cloudProfile.value?.spec.regions, ['name', region])
+      : find(getCloudProfileSpec(cloudProfile.value).regions, ['name', region])
     if (!regionData) {
       return []
     }

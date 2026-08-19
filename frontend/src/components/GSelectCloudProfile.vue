@@ -35,6 +35,8 @@ import { useCloudProfileStore } from '@/store/cloudProfile/index'
 import { useProjectStore } from '@/store/project.js'
 import { useSeedStore } from '@/store/seed'
 
+import { useLightweightCloudProfile } from '@/composables/useCloudProfile/useLightweightCloudProfile.js'
+
 import {
   getErrorMessages,
   cloudProfileDisplayName,
@@ -68,9 +70,19 @@ const projectStore = useProjectStore()
 const { project } = storeToRefs(projectStore)
 const seedStore = useSeedStore()
 
+const namespace = computed(() => project.value?.spec.namespace)
+const {
+  getProviderType,
+  getSeedSelector,
+} = useLightweightCloudProfile(cloudProfileRef, namespace, {
+  cloudProfileStore,
+})
+
 const seeds = computed(() => {
-  const cloudProfile = cloudProfileStore.cloudProfileByRef(cloudProfileRef.value)
-  return seedStore.seedsForCloudProfileByProject(cloudProfile, project.value)
+  return seedStore.seedsForCloudProfileValuesByProject({
+    providerType: getProviderType(),
+    seedSelector: getSeedSelector(),
+  }, project.value)
 })
 
 const emit = defineEmits([

@@ -11,6 +11,8 @@ import {
 
 import { matchesPropertyOrEmpty } from '@/composables/helper'
 
+import { getCloudProfileSpec } from '@/utils'
+
 import get from 'lodash/get'
 import filter from 'lodash/filter'
 import find from 'lodash/find'
@@ -30,6 +32,8 @@ export function useOpenStackConstraints (cloudProfile) {
     throw new Error('cloudProfile must be a ref!')
   }
 
+  const cloudProfileSpec = computed(() => getCloudProfileSpec(cloudProfile.value))
+
   /**
    * Returns floating pools filtered by region and domain.
    * Handles regional and domain-specific constraints, including non-constraining pools.
@@ -48,7 +52,7 @@ export function useOpenStackConstraints (cloudProfile) {
     }
 
     return computed(() => {
-      const floatingPools = get(cloudProfile.value, ['spec', 'providerConfig', 'constraints', 'floatingPools'])
+      const floatingPools = get(cloudProfileSpec.value, ['providerConfig', 'constraints', 'floatingPools'])
       let availableFloatingPools = filter(floatingPools, matchesPropertyOrEmpty('region', region.value))
       availableFloatingPools = filter(availableFloatingPools, matchesPropertyOrEmpty('domain', secretDomain.value))
 
@@ -101,7 +105,7 @@ export function useOpenStackConstraints (cloudProfile) {
     }
 
     return computed(() => {
-      const loadBalancerProviders = get(cloudProfile.value, ['spec', 'providerConfig', 'constraints', 'loadBalancerProviders'])
+      const loadBalancerProviders = get(cloudProfileSpec.value, ['providerConfig', 'constraints', 'loadBalancerProviders'])
       let availableLoadBalancerProviders = filter(loadBalancerProviders, matchesPropertyOrEmpty('region', region.value))
       const hasRegionSpecificLoadBalancerProvider = find(availableLoadBalancerProviders, lb => !!lb.region)
       if (hasRegionSpecificLoadBalancerProvider) {
@@ -112,7 +116,7 @@ export function useOpenStackConstraints (cloudProfile) {
   }
 
   const loadBalancerClasses = computed(() => {
-    return get(cloudProfile.value, ['spec', 'providerConfig', 'constraints', 'loadBalancerConfig', 'classes'])
+    return get(cloudProfileSpec.value, ['providerConfig', 'constraints', 'loadBalancerConfig', 'classes'])
   })
 
   const loadBalancerClassNames = computed(() => {

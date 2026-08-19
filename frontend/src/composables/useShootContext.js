@@ -35,6 +35,7 @@ import { useMachineImages } from '@/composables/useCloudProfile/useMachineImages
 import { useRegions } from '@/composables/useCloudProfile/useRegions.js'
 import { useMetalConstraints } from '@/composables/useCloudProfile/useMetalConstraints.js'
 import { useVolumeTypes } from '@/composables/useCloudProfile/useVolumeTypes.js'
+import { useCloudProfile } from '@/composables/useCloudProfile/useCloudProfile.js'
 
 import {
   scheduleEventsFromCrontabBlocks,
@@ -98,6 +99,8 @@ export function createShootContextComposable (options = {}) {
     projectStore = useProjectStore(),
     credentialStore = useCredentialStore(),
     seedStore = useSeedStore(),
+    api,
+    loadFullCloudProfile = false,
   } = options
 
   function hasEnabledAddons (value) {
@@ -239,9 +242,18 @@ export function createShootContextComposable (options = {}) {
     },
     set (value) {
       set(manifest.value, ['spec', 'cloudProfile'], value)
-      resetCloudProfileDependendValues()
+      if (!loadFullCloudProfile) {
+        resetCloudProfileDependendValues()
+      }
     },
   })
+
+  const fullCloudProfileState = loadFullCloudProfile
+    ? useCloudProfile(cloudProfileRef, shootNamespace, {
+      cloudProfileStore,
+      ...(api && { api }),
+    })
+    : null
 
   function resetCloudProfileDependendValues () {
     resetNetworkingType()
@@ -945,10 +957,12 @@ export function createShootContextComposable (options = {}) {
     getAccessRestrictionPatchData,
   } = useShootAccessRestrictions(manifest, {
     cloudProfileStore,
+    cloudProfile: fullCloudProfileState?.cloudProfile,
   })
 
   const {
     cloudProfiles,
+    namespacedCloudProfiles,
     defaultCloudProfileRef,
     cloudProfile,
     seed,
@@ -982,7 +996,18 @@ export function createShootContextComposable (options = {}) {
     gardenerExtensionStore,
     credentialStore,
     seedStore,
+    cloudProfile: fullCloudProfileState?.cloudProfile,
   })
+
+  if (fullCloudProfileState) {
+    watch(fullCloudProfileState.cloudProfile, value => {
+      if (value) {
+        resetCloudProfileDependendValues()
+      }
+    }, {
+      flush: 'sync',
+    })
+  }
 
   const {
     defaultKubernetesVersion,
@@ -1166,7 +1191,11 @@ export function createShootContextComposable (options = {}) {
     visibleAddonDefinitionList,
     /* helper */
     cloudProfiles,
+    namespacedCloudProfiles,
     cloudProfile,
+    isCloudProfileLoading: fullCloudProfileState?.isLoading ?? ref(false),
+    cloudProfileError: fullCloudProfileState?.error ?? shallowRef(null),
+    reloadCloudProfile: fullCloudProfileState?.reload ?? (() => Promise.resolve(cloudProfile.value)),
     seed,
     seeds,
     isFailureToleranceTypeZoneSupported,

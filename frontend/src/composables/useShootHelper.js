@@ -29,6 +29,8 @@ import { useMetalConstraints } from '@/composables/useCloudProfile/useMetalConst
 import { useVolumeTypes } from '@/composables/useCloudProfile/useVolumeTypes'
 import { useLightweightCloudProfile } from '@/composables/useCloudProfile/useLightweightCloudProfile.js'
 
+import { getCloudProfileSpec } from '@/utils'
+
 import { useShootAccessRestrictions } from './useShootAccessRestrictions'
 
 import some from 'lodash/some'
@@ -58,6 +60,7 @@ export function createShootHelperComposable (shootItem, options = {}) {
     credentialStore = useCredentialStore(),
     seedStore = useSeedStore(),
     projectStore = useProjectStore(),
+    cloudProfile: providedCloudProfile,
   } = options
 
   const {
@@ -97,6 +100,10 @@ export function createShootHelperComposable (shootItem, options = {}) {
     return cloudProfileStore.cloudProfilesByProviderType(providerType.value)
   })
 
+  const namespacedCloudProfiles = computed(() => {
+    return cloudProfileStore.namespacedCloudProfilesByProviderType(providerType.value, namespace.value)
+  })
+
   const defaultCloudProfileRef = computed(() => {
     const defaultCloudProfile = head(cloudProfiles.value)
     const name = get(defaultCloudProfile, ['metadata', 'name'])
@@ -107,7 +114,7 @@ export function createShootHelperComposable (shootItem, options = {}) {
     return cloudProfileRef
   })
 
-  const cloudProfile = computed(() => {
+  const cloudProfile = providedCloudProfile ?? computed(() => {
     return cloudProfileStore.cloudProfileByRef(cloudProfileRef.value)
   })
 
@@ -164,6 +171,13 @@ export function createShootHelperComposable (shootItem, options = {}) {
   })
 
   const seeds = computed(() => {
+    if (providedCloudProfile) {
+      const spec = getCloudProfileSpec(cloudProfile.value)
+      return seedStore.seedsForCloudProfileValuesByProject({
+        providerType: spec.type,
+        seedSelector: spec.seedSelector,
+      }, project.value)
+    }
     return seedStore.seedsForCloudProfileValuesByProject({
       providerType: getProviderType(),
       seedSelector: getSeedSelector(),
@@ -171,7 +185,10 @@ export function createShootHelperComposable (shootItem, options = {}) {
   })
 
   const isFailureToleranceTypeZoneSupported = computed(() => {
-    if (!getProviderType()) {
+    const resolvedProviderType = providedCloudProfile
+      ? getCloudProfileSpec(cloudProfile.value).type
+      : getProviderType()
+    if (!resolvedProviderType) {
       return true
     }
     const seedList = seedName.value
@@ -239,10 +256,12 @@ export function createShootHelperComposable (shootItem, options = {}) {
     accessRestrictionNoItemsText,
   } = useShootAccessRestrictions(shootItem, {
     cloudProfileStore,
+    cloudProfile: providedCloudProfile,
   })
 
   return {
     cloudProfiles,
+    namespacedCloudProfiles,
     defaultCloudProfileRef,
     cloudProfile,
     seed,

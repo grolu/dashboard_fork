@@ -228,11 +228,27 @@ describe('useCloudProfile', () => {
 
     expect(signal.aborted).toBe(true)
     expect(composable.isLoading.value).toBe(false)
+    expect(composable.cloudProfile.value).toBeNull()
 
     response.resolve({ data: createFullNamespacedCloudProfile('garden-a') })
     await flushPromises()
 
     expect(composable.cloudProfile.value).toBeNull()
+  })
+
+  it('releases a loaded full NamespacedCloudProfile on scope disposal', async () => {
+    const fullCloudProfile = createFullNamespacedCloudProfile('garden-a')
+    vi.spyOn(api, 'getNamespacedCloudProfileStatus').mockResolvedValue({ data: fullCloudProfile })
+    const cloudProfileRef = ref({ kind: 'NamespacedCloudProfile', name: 'custom' })
+    const { composable, scope } = createComposable(cloudProfileRef)
+    await flushPromises()
+
+    expect(composable.cloudProfile.value).toBe(fullCloudProfile)
+
+    scope.stop()
+
+    expect(composable.cloudProfile.value).toBeNull()
+    expect(composable.error.value).toBeNull()
   })
 
   it('does not write a loaded full NamespacedCloudProfile to Pinia state', async () => {

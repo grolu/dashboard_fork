@@ -18,7 +18,9 @@ import { useRoute } from 'vue-router'
 import { useProvideShootContext } from '@/composables/useShootContext'
 
 const route = useRoute()
-const { createShootManifest } = useProvideShootContext()
+const { createShootManifest } = useProvideShootContext({
+  loadFullCloudProfile: true,
+})
 
 const namespace = computed(() => route.params?.namespace)
 

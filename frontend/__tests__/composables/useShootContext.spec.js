@@ -4,11 +4,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-import { reactive } from 'vue'
+import {
+  effectScope,
+  reactive,
+} from 'vue'
 import {
   setActivePinia,
   createPinia,
 } from 'pinia'
+import { flushPromises } from '@vue/test-utils'
 
 import { useCloudProfileStore } from '@/store/cloudProfile'
 import { useConfigStore } from '@/store/config'
@@ -18,6 +22,7 @@ import { useAppStore } from '@/store/app'
 import { useAuthzStore } from '@/store/authz'
 import { useSeedStore } from '@/store/seed'
 
+import { useApi } from '@/composables/useApi'
 import { createShootContextComposable } from '@/composables/useShootContext'
 
 import cloneDeep from 'lodash/cloneDeep'
@@ -26,6 +31,8 @@ describe('composables', () => {
   let shootContextStore
   let configStore
   let seedStore
+  let cloudProfileStore
+  let contextOptions
 
   const systemTime = new Date('2024-03-15T14:00:00+01:00')
 
@@ -49,12 +56,12 @@ describe('composables', () => {
     configStore.setConfiguration(global.fixtures.config)
     const credentialStore = useCredentialStore()
     credentialStore._setCredentials(global.fixtures.credentials)
-    const cloudProfileStore = useCloudProfileStore()
+    cloudProfileStore = useCloudProfileStore()
     cloudProfileStore.setCloudProfiles(cloneDeep(global.fixtures.cloudprofiles))
     const gardenerExtensionStore = useGardenerExtensionStore()
     gardenerExtensionStore.list = global.fixtures.gardenerExtensions
     seedStore = useSeedStore()
-    const composable = createShootContextComposable({
+    contextOptions = {
       logger,
       appStore,
       authzStore,
@@ -63,7 +70,8 @@ describe('composables', () => {
       gardenerExtensionStore,
       credentialStore,
       seedStore,
-    })
+    }
+    const composable = createShootContextComposable(contextOptions)
     shootContextStore = reactive(composable)
   })
 
@@ -378,6 +386,216 @@ describe('composables', () => {
         },
       })
       expect(shootContextStore.workerless).toBe(true)
+    })
+
+    describe('selected full cloud profile', () => {
+      const namespace = 'garden-test'
+
+      function createDescriptor (name, parentName = 'aws', descriptorNamespace = namespace) {
+        return {
+          apiVersion: 'core.gardener.cloud/v1beta1',
+          kind: 'NamespacedCloudProfile',
+          metadata: {
+            name,
+            namespace: descriptorNamespace,
+          },
+          spec: {
+            parent: {
+              kind: 'CloudProfile',
+              name: parentName,
+            },
+          },
+        }
+      }
+
+      function createFullProfile (name, suffix = name) {
+        return {
+          ...createDescriptor(name),
+          status: {
+            cloudProfileSpec: {
+              type: 'aws',
+              kubernetes: {
+                versions: [{
+                  version: `1.3${suffix.length}.1`,
+                  classification: 'supported',
+                }],
+              },
+              machineImages: [{
+                name: `image-${suffix}`,
+                versions: [{
+                  version: '1.0.0',
+                  classification: 'supported',
+                  architectures: ['amd64'],
+                  cri: [{ name: 'containerd' }],
+                }],
+              }],
+              machineTypes: [{
+                name: `machine-${suffix}`,
+                architecture: 'amd64',
+                usable: true,
+              }],
+              volumeTypes: [{
+                name: `volume-${suffix}`,
+                usable: true,
+              }],
+              regions: [{
+                name: `region-${suffix}`,
+                zones: [{ name: `zone-${suffix}` }],
+              }],
+            },
+          },
+        }
+      }
+
+      function deferred () {
+        let resolve
+        let reject
+        const promise = new Promise((_resolve, _reject) => {
+          resolve = _resolve
+          reject = _reject
+        })
+        return { promise, resolve, reject }
+      }
+
+      function createFullProfileContext () {
+        const scope = effectScope()
+        const api = useApi()
+        const context = reactive(scope.run(() => createShootContextComposable({
+          ...contextOptions,
+          api,
+          loadFullCloudProfile: true,
+        })))
+        context.createShootManifest({
+          providerType: 'aws',
+          workerless: false,
+        })
+        return { api, context, scope }
+      }
+
+      it('populates the selector from regular profiles and namespace-local shallow descriptors without status requests', () => {
+        const descriptors = [
+          createDescriptor('custom-aws'),
+          createDescriptor('custom-gcp', 'gcp'),
+          createDescriptor('other-namespace', 'aws', 'garden-other'),
+        ]
+        cloudProfileStore.setNamespacedCloudProfileDescriptors(descriptors)
+        const api = useApi()
+        const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
+
+        const { context, scope } = createFullProfileContext()
+
+        expect(context.cloudProfiles.map(profile => profile.metadata.name)).toContain('aws')
+        expect(context.namespacedCloudProfiles).toEqual([
+          expect.objectContaining({ metadata: expect.objectContaining({ name: 'custom-aws' }) }),
+        ])
+        expect(getNamespacedCloudProfileStatus).not.toHaveBeenCalled()
+
+        context.cloudProfileRef = { kind: 'CloudProfile', name: 'aws' }
+
+        expect(context.cloudProfile).toBe(cloudProfileStore.cloudProfileByRef(context.cloudProfileRef))
+        expect(getNamespacedCloudProfileStatus).not.toHaveBeenCalled()
+        scope.stop()
+      })
+
+      it('loads only the selected NCP once and feeds its effective status spec to dependent catalogs', async () => {
+        const descriptor = createDescriptor('custom')
+        const fullProfile = createFullProfile('custom')
+        cloudProfileStore.setNamespacedCloudProfileDescriptors([descriptor])
+        const api = useApi()
+        const response = deferred()
+        const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
+          .mockReturnValue(response.promise)
+        const { context, scope } = createFullProfileContext()
+
+        context.cloudProfileRef = { kind: 'NamespacedCloudProfile', name: 'custom' }
+
+        expect(context.isCloudProfileLoading).toBe(true)
+        expect(context.cloudProfile).toBeNull()
+        expect(getNamespacedCloudProfileStatus).toHaveBeenCalledTimes(1)
+        expect(getNamespacedCloudProfileStatus).toHaveBeenCalledWith({
+          name: 'custom',
+          namespace,
+          signal: expect.any(AbortSignal),
+        })
+
+        response.resolve({ data: fullProfile })
+        await flushPromises()
+
+        expect(context.isCloudProfileLoading).toBe(false)
+        expect(context.cloudProfile).toBe(fullProfile)
+        expect(context.region).toBe('region-custom')
+        expect(context.allZones).toEqual(['zone-custom'])
+        expect(context.sortedKubernetesVersions.map(({ version }) => version)).toEqual(['1.36.1'])
+        expect(context.allMachineTypes.map(({ name }) => name)).toEqual(['machine-custom'])
+        expect(context.volumeTypes.map(({ name }) => name)).toEqual(['volume-custom'])
+        expect(context.machineImages.map(({ name }) => name)).toEqual(['image-custom'])
+        expect(getNamespacedCloudProfileStatus).toHaveBeenCalledTimes(1)
+        scope.stop()
+      })
+
+      it('aborts old selections, ignores stale responses, and resets values only for the current full profile', async () => {
+        cloudProfileStore.setNamespacedCloudProfileDescriptors([
+          createDescriptor('first'),
+          createDescriptor('second'),
+        ])
+        const firstResponse = deferred()
+        const secondResponse = deferred()
+        const api = useApi()
+        const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
+          .mockReturnValueOnce(firstResponse.promise)
+          .mockReturnValueOnce(secondResponse.promise)
+        const { context, scope } = createFullProfileContext()
+        const initialRegion = context.region
+
+        context.cloudProfileRef = { kind: 'NamespacedCloudProfile', name: 'first' }
+        const firstSignal = getNamespacedCloudProfileStatus.mock.calls[0][0].signal
+        context.cloudProfileRef = { kind: 'NamespacedCloudProfile', name: 'second' }
+
+        expect(firstSignal.aborted).toBe(true)
+        expect(context.region).toBe(initialRegion)
+        expect(context.cloudProfile).toBeNull()
+        expect(getNamespacedCloudProfileStatus).toHaveBeenCalledTimes(2)
+
+        const secondProfile = createFullProfile('second')
+        secondResponse.resolve({ data: secondProfile })
+        await flushPromises()
+        firstResponse.resolve({ data: createFullProfile('first') })
+        await flushPromises()
+
+        expect(context.cloudProfile).toBe(secondProfile)
+        expect(context.region).toBe('region-second')
+        expect(context.machineImages.map(({ name }) => name)).toEqual(['image-second'])
+        expect(context.cloudProfileError).toBeNull()
+        scope.stop()
+      })
+
+      it('exposes a retryable failure without a parent-only profile and releases the full result on disposal', async () => {
+        cloudProfileStore.setNamespacedCloudProfileDescriptors([createDescriptor('custom')])
+        const requestError = new Error('status unavailable')
+        const fullProfile = createFullProfile('custom')
+        const api = useApi()
+        const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
+          .mockRejectedValueOnce(requestError)
+          .mockResolvedValueOnce({ data: fullProfile })
+        const { context, scope } = createFullProfileContext()
+
+        context.cloudProfileRef = { kind: 'NamespacedCloudProfile', name: 'custom' }
+        await flushPromises()
+
+        expect(context.cloudProfileError).toBe(requestError)
+        expect(context.cloudProfile).toBeNull()
+        expect(context.sortedKubernetesVersions).toEqual([])
+
+        await context.reloadCloudProfile()
+
+        expect(context.cloudProfileError).toBeNull()
+        expect(context.cloudProfile).toBe(fullProfile)
+        expect(getNamespacedCloudProfileStatus).toHaveBeenCalledTimes(2)
+
+        scope.stop()
+
+        expect(context.cloudProfile).toBeNull()
+      })
     })
 
     it('should change the infrastructure kind', async () => {

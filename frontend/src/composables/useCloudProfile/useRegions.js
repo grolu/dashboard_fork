@@ -13,6 +13,8 @@ import { useSeedStore } from '@/store/seed'
 
 import { getZones } from '@/composables/helper'
 
+import { getCloudProfileSpec } from '@/utils'
+
 import map from 'lodash/map'
 import filter from 'lodash/filter'
 import get from 'lodash/get'
@@ -30,13 +32,15 @@ export function useRegions (cloudProfile) {
     throw new Error('cloudProfile must be a ref!')
   }
 
+  const cloudProfileSpec = computed(() => getCloudProfileSpec(cloudProfile.value))
+
   /**
    * Check if region is valid for the cloud profile
    * @returns Boolean Computed ref indicating if region is valid
    * @param region
    */
   function isValidRegion (region) {
-    const providerType = get(cloudProfile.value, ['spec', 'type'])
+    const providerType = get(cloudProfileSpec.value, ['type'])
 
     if (providerType === 'azure') {
       // Azure regions may not be zoned, need to filter these out for the dashboard
@@ -45,7 +49,7 @@ export function useRegions (cloudProfile) {
     }
 
     // Filter regions that are not defined in cloud profile
-    const regions = get(cloudProfile.value, ['spec', 'regions'], [])
+    const regions = get(cloudProfileSpec.value, ['regions'], [])
     return some(regions, ['name', region])
   }
 
@@ -105,7 +109,7 @@ export function useRegions (cloudProfile) {
         return []
       }
 
-      const regions = get(cloudProfile.value, ['spec', 'regions'], [])
+      const regions = get(cloudProfileSpec.value, ['regions'], [])
       const regionsInCloudProfile = map(regions, 'name')
       const regionsInCloudProfileWithZones = filter(regionsInCloudProfile, regionName => {
         return isValidRegion(regionName)

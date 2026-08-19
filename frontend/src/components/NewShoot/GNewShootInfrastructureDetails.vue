@@ -12,6 +12,7 @@ SPDX-License-Identifier: Apache-2.0
           ref="cloudProfile"
           v-model="cloudProfileRef"
           :cloud-profiles="cloudProfiles"
+          :namespaced-cloud-profiles="namespacedCloudProfiles"
           color="primary"
         />
       </v-col>
@@ -224,6 +225,7 @@ export default {
       providerInfrastructureConfigFirewallSize,
       providerInfrastructureConfigFirewallNetworks,
       cloudProfiles,
+      namespacedCloudProfiles,
       infrastructureBindings,
       regionsWithSeed,
       regionsWithoutSeed,
@@ -255,6 +257,7 @@ export default {
       firewallSize: providerInfrastructureConfigFirewallSize,
       firewallNetworks: providerInfrastructureConfigFirewallNetworks,
       cloudProfiles,
+      namespacedCloudProfiles,
       infrastructureBindings,
       regionsWithSeed,
       regionsWithoutSeed,

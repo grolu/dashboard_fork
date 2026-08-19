@@ -17,6 +17,8 @@ import { useApi } from '@/composables/useApi'
 import { useLogger } from '@/composables/useLogger'
 import { useSocketEventHandler } from '@/composables/useSocketEventHandler'
 
+import { getCloudProfileSpec } from '@/utils'
+
 import find from 'lodash/find'
 import get from 'lodash/get'
 import filter from 'lodash/filter'
@@ -119,9 +121,10 @@ export const useSeedStore = defineStore('seed', () => {
       return []
     }
 
+    const spec = getCloudProfileSpec(cloudProfile)
     return seedsForCloudProfileValuesByProject({
-      providerType: get(cloudProfile, ['spec', 'type']),
-      seedSelector: get(cloudProfile, ['spec', 'seedSelector']),
+      providerType: get(spec, ['type']),
+      seedSelector: get(spec, ['seedSelector']),
     }, project)
   }
 

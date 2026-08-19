@@ -11,6 +11,8 @@ import {
 
 import { useConfigStore } from '@/store/config'
 
+import { getCloudProfileSpec } from '@/utils'
+
 import get from 'lodash/get'
 
 /**
@@ -27,8 +29,8 @@ export function useDefaultNodesCIDR (cloudProfile) {
 
   const defaultNodesCIDR = computed(() => {
     return get(
-      cloudProfile.value,
-      ['spec', 'providerConfig', 'defaultNodesCIDR'],
+      getCloudProfileSpec(cloudProfile.value),
+      ['providerConfig', 'defaultNodesCIDR'],
       configStore.defaultNodesCIDR,
     )
   })

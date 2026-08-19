@@ -150,6 +150,8 @@ export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
       generation++
       abortController?.abort()
       abortController = undefined
+      cloudProfile.value = null
+      error.value = null
       isLoading.value = false
     })
   }
@@ -158,7 +160,7 @@ export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
     cloudProfile,
     isLoading,
     error,
-    reload: load,
+    reload: () => load(),
   }
 }
 

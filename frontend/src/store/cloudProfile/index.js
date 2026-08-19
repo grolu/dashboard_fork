@@ -128,6 +128,19 @@ export const useCloudProfileStore = defineStore('cloudProfile', () => {
     return sortBy(filteredCloudProfiles, 'metadata.name')
   }
 
+  function namespacedCloudProfilesByProviderType (providerType, namespace) {
+    if (!namespace) {
+      return []
+    }
+
+    const filteredCloudProfiles = filter(namespacedCloudProfileDescriptors.value, descriptor => {
+      const parentCloudProfile = parentCloudProfileForDescriptor(descriptor)
+      return descriptor.metadata?.namespace === namespace &&
+        parentCloudProfile?.spec?.type === providerType
+    })
+    return sortBy(filteredCloudProfiles, 'metadata.name')
+  }
+
   function cloudProfileByRef (cloudProfileRef) {
     if (cloudProfileRef?.kind !== 'CloudProfile') {
       return null
@@ -146,6 +159,7 @@ export const useCloudProfileStore = defineStore('cloudProfile', () => {
     fetchCloudProfiles,
     fetchNamespacedCloudProfileDescriptors,
     cloudProfilesByProviderType,
+    namespacedCloudProfilesByProviderType,
     sortedInfraProviderTypeList,
     cloudProfileByRef,
     namespacedCloudProfileDescriptorByRef,

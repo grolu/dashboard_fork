@@ -12,6 +12,8 @@ import {
 import { useMachineTypes } from '@/composables/useCloudProfile/useMachineTypes'
 import { getZones } from '@/composables/helper.js'
 
+import { getCloudProfileSpec } from '@/utils'
+
 import get from 'lodash/get'
 import map from 'lodash/map'
 import toPairs from 'lodash/toPairs'
@@ -31,8 +33,9 @@ export function useMetalConstraints (cloudProfile) {
   }
 
   const { useFilteredMachineTypes } = useMachineTypes(cloudProfile)
+  const cloudProfileSpec = computed(() => getCloudProfileSpec(cloudProfile.value))
 
-  const isMetal = computed(() => get(cloudProfile.value, ['spec', 'type']) === 'metal')
+  const isMetal = computed(() => get(cloudProfileSpec.value, ['type']) === 'metal')
 
   /**
    * Returns partition IDs for a given region.
@@ -78,7 +81,7 @@ export function useMetalConstraints (cloudProfile) {
   }
 
   const firewallImages = computed(() => {
-    return get(cloudProfile.value, ['spec', 'providerConfig', 'firewallImages'])
+    return get(cloudProfileSpec.value, ['providerConfig', 'firewallImages'])
   })
 
   /**
@@ -94,7 +97,7 @@ export function useMetalConstraints (cloudProfile) {
     }
 
     return computed(() => {
-      const networks = get(cloudProfile.value, ['spec', 'providerConfig', 'firewallNetworks', partitionID.value])
+      const networks = get(cloudProfileSpec.value, ['providerConfig', 'firewallNetworks', partitionID.value])
       return map(toPairs(networks), ([key, value]) => {
         return {
           key,

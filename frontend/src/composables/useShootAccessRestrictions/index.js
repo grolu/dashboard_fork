@@ -28,6 +28,7 @@ const shootPropertyMappings = Object.freeze({
 export const useShootAccessRestrictions = (shootItem, options = {}) => {
   const {
     cloudProfileStore = useCloudProfileStore(),
+    cloudProfile,
   } = options
 
   const {
@@ -38,18 +39,18 @@ export const useShootAccessRestrictions = (shootItem, options = {}) => {
     return computed(() => get(shootItem.value, path))
   })
 
-  const {
-    findRegion,
-  } = useLightweightCloudProfile(cloudProfileRef, namespace, {
+  const lightweightCloudProfile = useLightweightCloudProfile(cloudProfileRef, namespace, {
     cloudProfileStore,
   })
   const {
     useAccessRestrictionDefinitions,
     useAccessRestrictionNoItemsText,
-  } = useAccessRestrictions(undefined, {
-    cloudProfileRef,
-    findRegion,
-  })
+  } = cloudProfile
+    ? useAccessRestrictions(cloudProfile)
+    : useAccessRestrictions(undefined, {
+      cloudProfileRef,
+      findRegion: lightweightCloudProfile.findRegion,
+    })
 
   const accessRestrictionDefinitionList = useAccessRestrictionDefinitions(region)
 

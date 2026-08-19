@@ -4,7 +4,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-import { getDateFormatted } from '@/utils'
+import {
+  getCloudProfileSpec,
+  getDateFormatted,
+} from '@/utils'
 
 import set from 'lodash/set'
 import isEmpty from 'lodash/isEmpty'
@@ -145,7 +148,7 @@ export function getZones (cloudProfile, region) {
     return []
   }
 
-  const regions = get(cloudProfile, ['spec', 'regions'], [])
+  const regions = get(getCloudProfileSpec(cloudProfile), ['regions'], [])
   const regionObj = find(regions, { name: region })
 
   const zones = get(regionObj, ['zones'], [])

@@ -161,6 +161,27 @@ describe('stores', () => {
         })).toBeNull()
       })
 
+      it('groups namespace-local shallow descriptors by their parent provider type', () => {
+        const awsParent = createCloudProfile('parent', 'aws')
+        const gcpParent = createCloudProfile('gcp-parent', 'gcp')
+        const gardenAws = createNamespacedCloudProfileDescriptor('garden-a', 'aws-custom')
+        const gardenGcp = createNamespacedCloudProfileDescriptor('garden-a', 'gcp-custom', 'gcp-parent')
+        const otherAws = createNamespacedCloudProfileDescriptor('garden-b', 'aws-other')
+        const api = useApi()
+        const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
+        cloudProfileStore.setCloudProfiles([awsParent, gcpParent])
+        cloudProfileStore.setNamespacedCloudProfileDescriptors([gardenGcp, otherAws, gardenAws])
+
+        expect(cloudProfileStore.namespacedCloudProfilesByProviderType('aws', 'garden-a'))
+          .toEqual([expect.objectContaining({ metadata: expect.objectContaining({ name: 'aws-custom' }) })])
+        expect(cloudProfileStore.namespacedCloudProfilesByProviderType('gcp', 'garden-a'))
+          .toEqual([expect.objectContaining({ metadata: expect.objectContaining({ name: 'gcp-custom' }) })])
+        expect(cloudProfileStore.namespacedCloudProfilesByProviderType('aws', 'garden-b'))
+          .toEqual([expect.objectContaining({ metadata: expect.objectContaining({ name: 'aws-other' }) })])
+        expect(cloudProfileStore.namespacedCloudProfilesByProviderType('aws')).toEqual([])
+        expect(getNamespacedCloudProfileStatus).not.toHaveBeenCalled()
+      })
+
       it('clears descriptors on reset', () => {
         cloudProfileStore.setNamespacedCloudProfileDescriptors([
           createNamespacedCloudProfileDescriptor('garden-a'),
