@@ -14,8 +14,6 @@ import {
 } from 'vue'
 import { useCookies } from '@vueuse/integrations/useCookies'
 
-import { useCloudProfileStore } from '@/store/cloudProfile'
-
 import { useLogger } from '@/composables/useLogger'
 import { useInterceptors } from '@/composables/useApi'
 
@@ -37,7 +35,7 @@ export const useAuthnStore = defineStore('authn', () => {
     decodeCookie,
     isExpired,
     signin,
-    signout: redirectToLogout,
+    signout,
     signinWithOidc,
     ensureValidToken,
   } = useUserManager(cookies, {
@@ -89,11 +87,6 @@ export const useAuthnStore = defineStore('authn', () => {
 
   function $reset () {
     user.value = decodeCookie()
-  }
-
-  function signout (...args) {
-    useCloudProfileStore().$reset()
-    redirectToLogout(...args)
   }
 
   return {

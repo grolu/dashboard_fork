@@ -10,7 +10,6 @@ import {
 } from 'pinia'
 
 import { useAuthnStore } from '@/store/authn'
-import { useCloudProfileStore } from '@/store/cloudProfile'
 
 describe('stores', () => {
   describe('authn', () => {
@@ -45,29 +44,6 @@ describe('stores', () => {
         const redirectPath = '/namespace/garden-foo/admin'
         authnStore.signinWithOidc(redirectPath)
         expect(window.location.href).toBe(createRedirectUrl(redirectPath).href)
-      })
-    })
-
-    describe('#signout', () => {
-      it('clears namespaced cloud profile descriptors before redirecting', () => {
-        const cloudProfileStore = useCloudProfileStore()
-        cloudProfileStore.setNamespacedCloudProfileDescriptors([{
-          kind: 'NamespacedCloudProfile',
-          metadata: {
-            name: 'profile',
-            namespace: 'garden-project',
-          },
-          spec: {
-            parent: {
-              kind: 'CloudProfile',
-              name: 'parent',
-            },
-          },
-        }])
-
-        authnStore.signout(undefined, '')
-
-        expect(cloudProfileStore.namespacedCloudProfileDescriptors).toBeNull()
       })
     })
   })
