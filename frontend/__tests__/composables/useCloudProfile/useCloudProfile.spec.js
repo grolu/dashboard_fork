@@ -161,6 +161,61 @@ describe('useCloudProfile', () => {
     expect(composable.error.value).toBeNull()
   })
 
+  it('reuses the active and loaded result when a workflow ensures the profile is available', async () => {
+    const fullCloudProfile = createFullNamespacedCloudProfile('garden-a')
+    const response = deferred()
+    const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
+      .mockReturnValue(response.promise)
+    const cloudProfileRef = ref({ kind: 'NamespacedCloudProfile', name: 'custom' })
+    const { composable } = createComposable(cloudProfileRef)
+
+    const firstEnsure = composable.ensureLoaded()
+    const secondEnsure = composable.ensureLoaded()
+
+    expect(firstEnsure).toBe(secondEnsure)
+    expect(getNamespacedCloudProfileStatus).toHaveBeenCalledTimes(1)
+
+    response.resolve({ data: fullCloudProfile })
+
+    await expect(firstEnsure).resolves.toBe(fullCloudProfile)
+    await expect(composable.ensureLoaded()).resolves.toBe(fullCloudProfile)
+    expect(getNamespacedCloudProfileStatus).toHaveBeenCalledTimes(1)
+  })
+
+  it('loads a referenced NamespacedCloudProfile even when no lightweight descriptor is available', async () => {
+    cloudProfileStore.setNamespacedCloudProfileDescriptors([])
+    const fullCloudProfile = createFullNamespacedCloudProfile('garden-a', 'missing-descriptor')
+    const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
+      .mockResolvedValue({ data: fullCloudProfile })
+    const cloudProfileRef = ref({ kind: 'NamespacedCloudProfile', name: 'missing-descriptor' })
+
+    const { composable } = createComposable(cloudProfileRef)
+    await flushPromises()
+
+    expect(getNamespacedCloudProfileStatus).toHaveBeenCalledExactlyOnceWith({
+      namespace: 'garden-a',
+      name: 'missing-descriptor',
+      signal: expect.any(AbortSignal),
+    })
+    expect(composable.cloudProfile.value).toBe(fullCloudProfile)
+    expect(composable.error.value).toBeNull()
+  })
+
+  it('rejects a shallow NamespacedCloudProfile status response as retryable load error', async () => {
+    const descriptor = createNamespacedCloudProfileDescriptor('garden-a')
+    vi.spyOn(api, 'getNamespacedCloudProfileStatus').mockResolvedValue({ data: descriptor })
+    const cloudProfileRef = ref({ kind: 'NamespacedCloudProfile', name: 'custom' })
+
+    const { composable } = createComposable(cloudProfileRef)
+    await flushPromises()
+
+    expect(composable.cloudProfile.value).toBeNull()
+    expect(composable.isLoading.value).toBe(false)
+    expect(composable.error.value).toEqual(expect.objectContaining({
+      message: 'NamespacedCloudProfile garden-a/custom status did not contain an effective cloudProfileSpec',
+    }))
+  })
+
   it('exposes request errors, never returns the parent, and retries cleanly', async () => {
     const requestError = new Error('status unavailable')
     const fullCloudProfile = createFullNamespacedCloudProfile('garden-a')
@@ -216,6 +271,29 @@ describe('useCloudProfile', () => {
     expect(composable.isLoading.value).toBe(false)
   })
 
+  it('does not reload when a reactive reference is replaced with an equivalent value', async () => {
+    const response = deferred()
+    const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
+      .mockReturnValue(response.promise)
+    const cloudProfileRef = ref({ kind: 'NamespacedCloudProfile', name: 'custom' })
+    const { composable } = createComposable(cloudProfileRef)
+    const signal = getNamespacedCloudProfileStatus.mock.calls[0][0].signal
+
+    cloudProfileRef.value = { kind: 'NamespacedCloudProfile', name: 'custom' }
+
+    expect(signal.aborted).toBe(false)
+    expect(getNamespacedCloudProfileStatus).toHaveBeenCalledTimes(1)
+
+    const fullCloudProfile = createFullNamespacedCloudProfile('garden-a')
+    response.resolve({ data: fullCloudProfile })
+    await flushPromises()
+    cloudProfileRef.value = { kind: 'NamespacedCloudProfile', name: 'custom' }
+    await flushPromises()
+
+    expect(composable.cloudProfile.value).toBe(fullCloudProfile)
+    expect(getNamespacedCloudProfileStatus).toHaveBeenCalledTimes(1)
+  })
+
   it('aborts the request on scope disposal and ignores its late response', async () => {
     const response = deferred()
     const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
@@ -238,7 +316,8 @@ describe('useCloudProfile', () => {
 
   it('releases a loaded full NamespacedCloudProfile on scope disposal', async () => {
     const fullCloudProfile = createFullNamespacedCloudProfile('garden-a')
-    vi.spyOn(api, 'getNamespacedCloudProfileStatus').mockResolvedValue({ data: fullCloudProfile })
+    const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
+      .mockResolvedValue({ data: fullCloudProfile })
     const cloudProfileRef = ref({ kind: 'NamespacedCloudProfile', name: 'custom' })
     const { composable, scope } = createComposable(cloudProfileRef)
     await flushPromises()
@@ -249,6 +328,8 @@ describe('useCloudProfile', () => {
 
     expect(composable.cloudProfile.value).toBeNull()
     expect(composable.error.value).toBeNull()
+    await expect(composable.ensureLoaded()).resolves.toBeNull()
+    expect(getNamespacedCloudProfileStatus).toHaveBeenCalledTimes(1)
   })
 
   it('loads only while enabled and starts a fresh request after every release', async () => {

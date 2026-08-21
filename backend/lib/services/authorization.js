@@ -150,12 +150,13 @@ export function canListNamespacedCloudProfiles (user, namespace) {
   })
 }
 
-export function canGetNamespacedCloudProfile (user, namespace, name, options) {
+export function canGetNamespacedCloudProfileStatus (user, namespace, name, options) {
   return hasAuthorization(user, {
     resourceAttributes: {
       verb: 'get',
       group: 'core.gardener.cloud',
       resource: 'namespacedcloudprofiles',
+      subresource: 'status',
       namespace,
       name,
     },

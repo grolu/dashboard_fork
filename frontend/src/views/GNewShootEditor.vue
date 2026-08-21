@@ -76,6 +76,8 @@ const {
   shootManifest,
   setShootManifest,
   isShootDirty,
+  cloudProfileRef,
+  ensureCloudProfileLoaded,
 } = useShootContext()
 
 const useProvide = (key, value) => {
@@ -101,6 +103,17 @@ async function save () {
     const data = getEditorValue()
     const namespace = shootNamespace.value
     const name = get(data, ['metadata', 'name'])
+    const selectedCloudProfileRef = get(data, ['spec', 'cloudProfile'])
+    const selectedProfileChanged =
+      selectedCloudProfileRef?.kind !== cloudProfileRef.value?.kind ||
+      selectedCloudProfileRef?.name !== cloudProfileRef.value?.name
+    if (selectedProfileChanged) {
+      cloudProfileRef.value = selectedCloudProfileRef
+    }
+    const cloudProfile = await ensureCloudProfileLoaded()
+    if (!cloudProfile) {
+      throw new Error('The selected cloud profile is not available.')
+    }
     await api.createShoot({ namespace, data })
     appStore.setSuccess('Cluster created')
     isShootCreated.value = true

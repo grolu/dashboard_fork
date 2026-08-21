@@ -53,6 +53,24 @@ function createNamespacedCloudProfileDescriptor (namespace, name = 'shared-profi
   }
 }
 
+function createNamespacedCloudProfileScaleFixture (statusPayloadSize) {
+  return Array.from({ length: 1_000 }, (_, index) => {
+    const descriptor = createNamespacedCloudProfileDescriptor(
+      `garden-${index % 100}`,
+      `profile-${index}`,
+      `parent-${index % 4}`,
+    )
+    descriptor.metadata.creationTimestamp = '2026-08-18T10:00:00Z'
+    descriptor.metadata.generation = 2
+    descriptor.metadata.labels = {
+      environment: `garden-${index % 100}`,
+    }
+    descriptor.metadata.resourceVersion = String(100_000 + index)
+    descriptor.status.cloudProfileSpec.payload = 'x'.repeat(statusPayloadSize)
+    return descriptor
+  })
+}
+
 function deferred () {
   let resolvePromise
   const promise = new Promise(resolve => {
@@ -125,6 +143,31 @@ describe('stores', () => {
         expect(cloudProfileStore.namespacedCloudProfileDescriptors[0]).not.toHaveProperty('status')
       })
 
+      it('keeps 1,000 stored descriptors independent of status size', () => {
+        const smallStatusResources = createNamespacedCloudProfileScaleFixture(1)
+        const largeStatusResources = createNamespacedCloudProfileScaleFixture(8_192)
+        const api = useApi()
+        const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
+
+        cloudProfileStore.setNamespacedCloudProfileDescriptors(smallStatusResources)
+        const smallDescriptors = JSON.stringify(cloudProfileStore.namespacedCloudProfileDescriptors)
+
+        cloudProfileStore.setNamespacedCloudProfileDescriptors(largeStatusResources)
+        const largeDescriptors = JSON.stringify(cloudProfileStore.namespacedCloudProfileDescriptors)
+
+        expect(cloudProfileStore.namespacedCloudProfileDescriptors).toHaveLength(1_000)
+        expect(largeDescriptors).toBe(smallDescriptors)
+        expect(Buffer.byteLength(largeDescriptors)).toBe(Buffer.byteLength(smallDescriptors))
+        expect(cloudProfileStore.namespacedCloudProfileDescriptors.every(descriptor => {
+          return !Object.hasOwn(descriptor, 'status') &&
+            descriptor.apiVersion === 'core.gardener.cloud/v1beta1' &&
+            descriptor.kind === 'NamespacedCloudProfile' &&
+            descriptor.metadata.managedFields?.[0]?.manager === 'test' &&
+            descriptor.spec.machineTypes?.length === 1
+        })).toBe(true)
+        expect(getNamespacedCloudProfileStatus).not.toHaveBeenCalled()
+      })
+
       it('filters locally by namespace and resolves duplicate names using the Shoot namespace', () => {
         const gardenA = createNamespacedCloudProfileDescriptor('garden-a')
         const gardenB = createNamespacedCloudProfileDescriptor('garden-b')
@@ -161,21 +204,26 @@ describe('stores', () => {
         })).toBeNull()
       })
 
-      it('groups namespace-local shallow descriptors by their parent provider type', () => {
+      it('groups namespace-local shallow descriptors by local provider type before falling back to the parent', () => {
         const awsParent = createCloudProfile('parent', 'aws')
         const gcpParent = createCloudProfile('gcp-parent', 'gcp')
         const gardenAws = createNamespacedCloudProfileDescriptor('garden-a', 'aws-custom')
         const gardenGcp = createNamespacedCloudProfileDescriptor('garden-a', 'gcp-custom', 'gcp-parent')
+        const gardenOverride = createNamespacedCloudProfileDescriptor('garden-a', 'gcp-override')
+        gardenOverride.spec.type = 'gcp'
         const otherAws = createNamespacedCloudProfileDescriptor('garden-b', 'aws-other')
         const api = useApi()
         const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
         cloudProfileStore.setCloudProfiles([awsParent, gcpParent])
-        cloudProfileStore.setNamespacedCloudProfileDescriptors([gardenGcp, otherAws, gardenAws])
+        cloudProfileStore.setNamespacedCloudProfileDescriptors([gardenGcp, otherAws, gardenOverride, gardenAws])
 
         expect(cloudProfileStore.namespacedCloudProfilesByProviderType('aws', 'garden-a'))
           .toEqual([expect.objectContaining({ metadata: expect.objectContaining({ name: 'aws-custom' }) })])
         expect(cloudProfileStore.namespacedCloudProfilesByProviderType('gcp', 'garden-a'))
-          .toEqual([expect.objectContaining({ metadata: expect.objectContaining({ name: 'gcp-custom' }) })])
+          .toEqual([
+            expect.objectContaining({ metadata: expect.objectContaining({ name: 'gcp-custom' }) }),
+            expect.objectContaining({ metadata: expect.objectContaining({ name: 'gcp-override' }) }),
+          ])
         expect(cloudProfileStore.namespacedCloudProfilesByProviderType('aws', 'garden-b'))
           .toEqual([expect.objectContaining({ metadata: expect.objectContaining({ name: 'aws-other' }) })])
         expect(cloudProfileStore.namespacedCloudProfilesByProviderType('aws')).toEqual([])

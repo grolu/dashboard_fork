@@ -29,7 +29,8 @@ function getRequestPaths () {
 }
 
 function createFullProfile ({ compressionFixture } = {}) {
-  const cachedProfile = cache.getNamespacedCloudProfile('garden-foo', 'shared-profile')
+  const cachedProfile = cache.getNamespacedCloudProfiles('garden-foo')
+    .find(item => item.metadata.name === 'shared-profile')
   const profile = structuredClone(cachedProfile)
   profile.status = {
     cloudProfileSpec: {
@@ -71,7 +72,6 @@ describe('api', function () {
 
       const res = await agent
         .get('/api/namespacedcloudprofiles')
-        .query({ diff: true })
         .set('cookie', await clusterUser.cookie)
         .expect('content-type', /json/)
         .expect(200)
@@ -217,7 +217,6 @@ describe('api', function () {
 
     it('fetches one complete status resource directly without consulting the shallow cache', async function () {
       const { cachedProfile, profile } = createFullProfile()
-      const getCachedProfileSpy = vi.spyOn(cache, 'getNamespacedCloudProfile')
       const listCachedProfilesSpy = vi.spyOn(cache, 'getNamespacedCloudProfiles')
       mockRequest.mockImplementationOnce(fixtures.auth.mocks.reviewSelfSubjectAccess())
       mockRequest.mockResolvedValueOnce(profile)
@@ -237,13 +236,13 @@ describe('api', function () {
         verb: 'get',
         group: 'core.gardener.cloud',
         resource: 'namespacedcloudprofiles',
+        subresource: 'status',
         namespace: 'garden-foo',
         name: 'shared-profile',
       }, undefined])
       expect(getRequestPaths().filter(path => path.endsWith('/status'))).toEqual([
         '/apis/core.gardener.cloud/v1beta1/namespaces/garden-foo/namespacedcloudprofiles/shared-profile/status',
       ])
-      expect(getCachedProfileSpy).not.toHaveBeenCalled()
       expect(listCachedProfilesSpy).not.toHaveBeenCalled()
     })
 
@@ -272,6 +271,7 @@ describe('api', function () {
         verb: 'get',
         group: 'core.gardener.cloud',
         resource: 'namespacedcloudprofiles',
+        subresource: 'status',
         namespace: 'garden-foo',
         name: 'shared-profile',
       }])

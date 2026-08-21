@@ -518,9 +518,12 @@ describe('composables', () => {
           signal: expect.any(AbortSignal),
         })
 
+        const ensuredCloudProfile = context.ensureCloudProfileLoaded()
+
         response.resolve({ data: fullProfile })
         await flushPromises()
 
+        await expect(ensuredCloudProfile).resolves.toBe(fullProfile)
         expect(context.isCloudProfileLoading).toBe(false)
         expect(context.cloudProfile).toBe(fullProfile)
         expect(context.region).toBe('region-custom')

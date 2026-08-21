@@ -135,8 +135,12 @@ export const useCloudProfileStore = defineStore('cloudProfile', () => {
 
     const filteredCloudProfiles = filter(namespacedCloudProfileDescriptors.value, descriptor => {
       const parentCloudProfile = parentCloudProfileForDescriptor(descriptor)
+      const localProviderType = descriptor.spec?.type
+      const effectiveProviderType = localProviderType === undefined
+        ? parentCloudProfile?.spec?.type
+        : localProviderType
       return descriptor.metadata?.namespace === namespace &&
-        parentCloudProfile?.spec?.type === providerType
+        effectiveProviderType === providerType
     })
     return sortBy(filteredCloudProfiles, 'metadata.name')
   }

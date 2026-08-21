@@ -66,12 +66,13 @@ describe('router', () => {
       vi.restoreAllMocks()
     })
 
-    it('does not list shallow profiles again for All Projects or project navigation', async () => {
+    it('loads shallow profiles once without status requests across All Projects and project navigation', async () => {
       setActivePinia(createPinia())
       const cloudProfileStore = useCloudProfileStore()
       const api = useApi()
       const getCloudProfiles = vi.spyOn(api, 'getCloudProfiles').mockResolvedValue({ data: [] })
       const getNamespacedCloudProfiles = vi.spyOn(api, 'getNamespacedCloudProfiles').mockResolvedValue({ data: [] })
+      const getNamespacedCloudProfileStatus = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
 
       await ensureCloudProfilesLoaded(cloudProfileStore)
       await ensureCloudProfilesLoaded(cloudProfileStore) // All Projects
@@ -80,6 +81,7 @@ describe('router', () => {
 
       expect(getCloudProfiles).toHaveBeenCalledTimes(1)
       expect(getNamespacedCloudProfiles).toHaveBeenCalledTimes(1)
+      expect(getNamespacedCloudProfileStatus).not.toHaveBeenCalled()
     })
   })
 

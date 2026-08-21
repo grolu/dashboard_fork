@@ -25,7 +25,7 @@ vi.mock('../lib/cache/index.js', async (importOriginal) => {
 })
 
 vi.mock('../lib/services/authorization.js', () => ({
-  canGetNamespacedCloudProfile: vi.fn(),
+  canGetNamespacedCloudProfileStatus: vi.fn(),
   canListNamespacedCloudProfiles: vi.fn(),
 }))
 
@@ -194,7 +194,7 @@ describe('services/namespacedCloudProfiles', () => {
         },
       },
     }
-    authorization.canGetNamespacedCloudProfile.mockResolvedValue(true)
+    authorization.canGetNamespacedCloudProfileStatus.mockResolvedValue(true)
     getNamespacedCloudProfile.mockResolvedValue(profile)
 
     const result = await namespacedCloudProfiles.getStatus({
@@ -206,7 +206,7 @@ describe('services/namespacedCloudProfiles', () => {
     })
 
     expect(result).toBe(profile)
-    expect(authorization.canGetNamespacedCloudProfile).toHaveBeenCalledExactlyOnceWith(
+    expect(authorization.canGetNamespacedCloudProfileStatus).toHaveBeenCalledExactlyOnceWith(
       user,
       'garden-foo',
       'shared-profile',
@@ -226,7 +226,7 @@ describe('services/namespacedCloudProfiles', () => {
   })
 
   it('rejects unauthorized status requests without calling Kubernetes or the cache', async () => {
-    authorization.canGetNamespacedCloudProfile.mockResolvedValue(false)
+    authorization.canGetNamespacedCloudProfileStatus.mockResolvedValue(false)
 
     await expect(namespacedCloudProfiles.getStatus({
       user,
@@ -251,7 +251,7 @@ describe('services/namespacedCloudProfiles', () => {
       name: 'AbortError',
       code: 'ABORT_ERR',
     })
-    authorization.canGetNamespacedCloudProfile.mockResolvedValue(true)
+    authorization.canGetNamespacedCloudProfileStatus.mockResolvedValue(true)
     getNamespacedCloudProfile.mockImplementation((namespace, name, { signal }) => {
       return new Promise((resolve, reject) => {
         resolveRequestStarted()

@@ -194,6 +194,11 @@ class Reflector {
     this.syncWith(list.items, resourceVersion)
     this.lastSyncResourceVersion = resourceVersion
 
+    // The watch loop can keep this async frame alive for the lifetime of the
+    // informer. Drop the original LIST response after the store has applied its
+    // transform so large fields removed by that transform can be reclaimed.
+    list = undefined
+
     while (!this.signal.aborted) {
       const timeoutSeconds = randomize(this.minWatchTimeout)
       const gracePeriod = 5

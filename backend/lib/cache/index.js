@@ -110,10 +110,6 @@ class Cache extends Map {
     return items
   }
 
-  getNamespacedCloudProfile (namespace, name) {
-    return this.get('namespacedcloudprofiles').find({ metadata: { namespace, name } })
-  }
-
   getQuotas () {
     return this.get('quotas').list()
   }
@@ -172,9 +168,6 @@ export default {
   },
   getNamespacedCloudProfiles (namespace) {
     return cache.getNamespacedCloudProfiles(namespace)
-  },
-  getNamespacedCloudProfile (namespace, name) {
-    return cache.getNamespacedCloudProfile(namespace, name)
   },
   getQuotas () {
     return cache.getQuotas()

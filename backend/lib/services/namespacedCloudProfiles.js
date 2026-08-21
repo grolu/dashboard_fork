@@ -129,7 +129,7 @@ export async function getStatus ({ user, namespace, name, signal, trace }) {
     const allowed = await measureAsync(
       trace,
       'authorizationMilliseconds',
-      () => authorization.canGetNamespacedCloudProfile(user, namespace, name, { signal }),
+      () => authorization.canGetNamespacedCloudProfileStatus(user, namespace, name, { signal }),
     )
     if (!allowed) {
       throw new Forbidden(`You are not allowed to get namespaced cloudprofile ${name} in namespace ${namespace}`)

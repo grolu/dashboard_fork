@@ -1199,6 +1199,7 @@ export function createShootContextComposable (options = {}) {
     isCloudProfileLoading: fullCloudProfileState?.isLoading ?? ref(false),
     cloudProfileError: fullCloudProfileState?.error ?? shallowRef(null),
     reloadCloudProfile: fullCloudProfileState?.reload ?? (() => Promise.resolve(cloudProfile.value)),
+    ensureCloudProfileLoaded: fullCloudProfileState?.ensureLoaded ?? (() => Promise.resolve(cloudProfile.value)),
     seed,
     seeds,
     isFailureToleranceTypeZoneSupported,

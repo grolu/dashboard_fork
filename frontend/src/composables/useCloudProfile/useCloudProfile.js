@@ -21,6 +21,41 @@ import { useApi } from '@/composables/useApi'
 
 const cloudProfileInjectionKey = Symbol('cloud-profile')
 
+function assertFullNamespacedCloudProfile (cloudProfile, namespace, name) {
+  if (cloudProfile?.kind !== 'NamespacedCloudProfile' || !cloudProfile.status?.cloudProfileSpec) {
+    throw new Error(
+      `NamespacedCloudProfile ${namespace}/${name} status did not contain an effective cloudProfileSpec`,
+    )
+  }
+  return cloudProfile
+}
+
+/**
+ * Loads one complete/effective NamespacedCloudProfile without retaining it globally.
+ *
+ * @param {object} cloudProfileRef - NamespacedCloudProfile reference
+ * @param {string} namespace - NamespacedCloudProfile namespace
+ * @param {object} options - API dependency and abort signal
+ * @returns {Promise<object|null>} Full NamespacedCloudProfile or null for an invalid reference
+ */
+function loadFullNamespacedCloudProfile (cloudProfileRef, namespace, options) {
+  const {
+    api,
+    signal,
+  } = options
+
+  if (cloudProfileRef?.kind !== 'NamespacedCloudProfile' || !cloudProfileRef.name || !namespace) {
+    return Promise.resolve(null)
+  }
+
+  const { name } = cloudProfileRef
+  return api.getNamespacedCloudProfileStatus({
+    name,
+    namespace,
+    ...(signal && { signal }),
+  }).then(response => assertFullNamespacedCloudProfile(response.data, namespace, name))
+}
+
 /**
  * Resolves a complete/effective CloudProfile for the supplied reference.
  *
@@ -45,6 +80,7 @@ export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
   const error = shallowRef(null)
 
   let abortController
+  let currentLoadPromise = Promise.resolve(null)
   let generation = 0
   let disposed = false
 
@@ -55,6 +91,7 @@ export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
     cloudProfile.value = null
     error.value = null
     isLoading.value = false
+    currentLoadPromise = Promise.resolve(null)
   }
 
   function resolveTarget () {
@@ -70,15 +107,10 @@ export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
     }
 
     if (resolvedCloudProfileRef?.kind === 'NamespacedCloudProfile') {
-      const descriptor = cloudProfileStore.namespacedCloudProfileDescriptorByRef(
-        resolvedCloudProfileRef,
-        resolvedNamespace,
-      )
       return {
         kind: resolvedCloudProfileRef.kind,
         name: resolvedCloudProfileRef.name,
         namespace: resolvedNamespace,
-        resource: descriptor,
       }
     }
 
@@ -93,7 +125,7 @@ export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
   function load (target = resolveTarget()) {
     if (!toValue(enabled)) {
       release()
-      return Promise.resolve(null)
+      return currentLoadPromise
     }
 
     const requestGeneration = ++generation
@@ -104,41 +136,44 @@ export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
     isLoading.value = false
 
     if (disposed) {
-      return Promise.resolve(null)
+      currentLoadPromise = Promise.resolve(null)
+      return currentLoadPromise
     }
 
     if (target.kind === 'CloudProfile') {
       cloudProfile.value = target.resource ?? null
-      return Promise.resolve(cloudProfile.value)
+      currentLoadPromise = Promise.resolve(cloudProfile.value)
+      return currentLoadPromise
     }
 
     cloudProfile.value = null
-    if (target.kind !== 'NamespacedCloudProfile' || !target.resource) {
-      return Promise.resolve(null)
+    if (target.kind !== 'NamespacedCloudProfile') {
+      currentLoadPromise = Promise.resolve(null)
+      return currentLoadPromise
     }
 
-    const name = target.resource.metadata?.name
-    const namespace = target.resource.metadata?.namespace
+    const { name, namespace } = target
     if (!name || !namespace) {
-      return Promise.resolve(null)
+      currentLoadPromise = Promise.resolve(null)
+      return currentLoadPromise
     }
 
     const controller = new AbortController()
     abortController = controller
     isLoading.value = true
 
-    return api.getNamespacedCloudProfileStatus({
-      name,
-      namespace,
+    currentLoadPromise = loadFullNamespacedCloudProfile(target, namespace, {
+      api,
       signal: controller.signal,
     })
-      .then(response => {
+      .then(fullCloudProfile => {
         if (requestGeneration === generation && !controller.signal.aborted) {
-          cloudProfile.value = response.data
-          return response.data
+          cloudProfile.value = fullCloudProfile
+          return fullCloudProfile
         }
         return null
-      }, err => {
+      })
+      .catch(err => {
         if (requestGeneration === generation && !controller.signal.aborted) {
           error.value = err
         }
@@ -150,11 +185,35 @@ export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
           isLoading.value = false
         }
       })
+    return currentLoadPromise
   }
 
-  watch([() => toValue(enabled), resolveTarget], ([isEnabled, target]) => {
+  function ensureLoaded () {
+    if (isLoading.value) {
+      return currentLoadPromise
+    }
+    if (cloudProfile.value) {
+      return Promise.resolve(cloudProfile.value)
+    }
+    return load()
+  }
+
+  watch([
+    () => toValue(enabled),
+    () => toValue(cloudProfileRef)?.kind,
+    () => toValue(cloudProfileRef)?.name,
+    () => toValue(cloudProfileRef)?.kind === 'NamespacedCloudProfile'
+      ? toValue(namespace)
+      : undefined,
+    () => {
+      const resolvedCloudProfileRef = toValue(cloudProfileRef)
+      return resolvedCloudProfileRef?.kind === 'CloudProfile'
+        ? cloudProfileStore.cloudProfileByRef(resolvedCloudProfileRef)
+        : null
+    },
+  ], ([isEnabled]) => {
     if (isEnabled) {
-      load(target)
+      load()
     } else {
       release()
     }
@@ -175,6 +234,7 @@ export function useCloudProfile (cloudProfileRef, namespace, options = {}) {
     isLoading,
     error,
     reload: () => load(),
+    ensureLoaded,
   }
 }
 

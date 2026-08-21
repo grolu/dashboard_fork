@@ -4,10 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-import {
-  cloneDeep,
-  find,
-} from 'lodash-es'
+import { cloneDeep } from 'lodash-es'
 
 function getNamespacedCloudProfile ({ uid, name, namespace, parentName, kind }) {
   return {
@@ -77,9 +74,6 @@ const namespacedCloudProfileList = [
 const namespacedcloudprofiles = {
   create (...args) {
     return getNamespacedCloudProfile(...args)
-  },
-  get (namespace, name) {
-    return find(this.list(namespace), { metadata: { namespace, name } })
   },
   list (namespace) {
     const items = cloneDeep(namespacedCloudProfileList)
