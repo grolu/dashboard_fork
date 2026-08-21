@@ -23,8 +23,10 @@ import get from 'lodash/get'
  * Provides synchronous, exact lookups against a lightweight CloudProfile.
  *
  * NamespacedCloudProfile values take precedence over values from their parent
- * CloudProfile. Every lookup falls through independently and returns the
- * matching object as-is; profiles and collection entries are never merged.
+ * CloudProfile. Top-level lookups fall through independently. Targeted version
+ * properties follow the controller's override rules while every matching
+ * object is still returned as-is; profiles and collection entries are never
+ * merged.
  *
  * @param {object} cloudProfileRef - Maybe-ref CloudProfile reference
  * @param {string} namespace - Maybe-ref namespace used to resolve a NamespacedCloudProfile
@@ -90,18 +92,31 @@ export function useLightweightCloudProfile (cloudProfileRef, namespace, options 
     return sources.map(source => source.versionsByVersion.get(version))
   }
 
-  function getVersionPropertyFromChain (versionChain, path) {
+  function resolveVersionOverride (versionChain) {
     const sourceIndex = versionChain.findIndex(Boolean)
     if (sourceIndex === -1) {
+      return {}
+    }
+    return {
+      version: versionChain.at(sourceIndex),
+      parentVersion: find(versionChain.slice(sourceIndex + 1), Boolean),
+    }
+  }
+
+  function isExpirationDatePath (path) {
+    return path === 'expirationDate' ||
+      (Array.isArray(path) && path.length === 1 && path[0] === 'expirationDate')
+  }
+
+  function getKubernetesVersionPropertyFromChain (versionChain, path) {
+    const { version, parentVersion } = resolveVersionOverride(versionChain)
+    if (!version) {
       return undefined
     }
-    for (const item of versionChain.slice(sourceIndex)) {
-      const value = get(item, path)
-      if (value !== undefined) {
-        return value
-      }
+    if (!parentVersion || isExpirationDatePath(path)) {
+      return get(version, path)
     }
-    return undefined
+    return get(parentVersion, path)
   }
 
   function findKubernetesVersion (version) {
@@ -109,11 +124,11 @@ export function useLightweightCloudProfile (cloudProfileRef, namespace, options 
     return find(resolveVersionChain(sources, version), Boolean)
   }
 
-  // Resolve one property by version identity. Only undefined values fall
-  // through; the version objects themselves remain exact and unmerged.
+  // The controller overlays only the local expiration date on a matching
+  // parent Kubernetes version. An omitted local date therefore clears it.
   function getKubernetesVersionProperty (version, path) {
     const sources = createKubernetesVersionSources(resolveSpecs())
-    return getVersionPropertyFromChain(resolveVersionChain(sources, version), path)
+    return getKubernetesVersionPropertyFromChain(resolveVersionChain(sources, version), path)
   }
 
   function someKubernetesVersion (predicate) {
@@ -126,9 +141,9 @@ export function useLightweightCloudProfile (cloudProfileRef, namespace, options 
         }
         seen.add(version.version)
         const versionChain = resolveVersionChain(sources, version.version)
-        // Keep the predicate item exact; callers request inherited properties
+        // Keep the predicate item exact; callers request effective properties
         // explicitly through the second argument.
-        const getProperty = path => getVersionPropertyFromChain(versionChain, path)
+        const getProperty = path => getKubernetesVersionPropertyFromChain(versionChain, path)
         if (predicate(version, getProperty)) {
           return true
         }
@@ -164,31 +179,44 @@ export function useLightweightCloudProfile (cloudProfileRef, namespace, options 
     return resolveVersionChain(sources, version)
   }
 
-  function supportsArchitecture (versionChain, sourceIndex, architecture) {
-    let architectures
-    for (const item of versionChain.slice(sourceIndex)) {
-      const candidateArchitectures = item?.architectures
-      if (candidateArchitectures !== undefined) {
-        architectures = candidateArchitectures
-        break
-      }
+  function replacesParentMachineImageVersion (version) {
+    return version.architectures?.length > 0 ||
+      version.cri?.length > 0 ||
+      version.kubeletVersionConstraint?.length > 0 ||
+      version.classification?.length > 0
+  }
+
+  function getEffectiveMachineImageVersionProperty (versionChain, path) {
+    const { version, parentVersion } = resolveVersionOverride(versionChain)
+    if (!version) {
+      return undefined
     }
+    if (!parentVersion || replacesParentMachineImageVersion(version)) {
+      return get(version, path)
+    }
+    if (isExpirationDatePath(path)) {
+      return get(version, path)
+    }
+    return get(parentVersion, path)
+  }
+
+  function supportsArchitecture (versionChain, architecture) {
+    let architectures = getEffectiveMachineImageVersionProperty(versionChain, 'architectures')
     architectures = architectures?.length ? architectures : ['amd64']
     return architectures.includes(architecture)
   }
 
-  function getMachineImageVersionPropertyFromChain (versionChain, sourceIndex, architecture, path) {
-    if (sourceIndex === -1 || !supportsArchitecture(versionChain, sourceIndex, architecture)) {
+  function getMachineImageVersionPropertyFromChain (versionChain, architecture, path) {
+    if (!supportsArchitecture(versionChain, architecture)) {
       return undefined
     }
-    return getVersionPropertyFromChain(versionChain, path)
+    return getEffectiveMachineImageVersionProperty(versionChain, path)
   }
 
   function findMachineImageVersion (imageName, version, architecture) {
     const sources = createMachineImageVersionSources(resolveSpecs(), imageName)
     const versionChain = resolveMachineImageVersionChain(sources, version)
-    const sourceIndex = versionChain.findIndex(Boolean)
-    if (sourceIndex === -1 || !supportsArchitecture(versionChain, sourceIndex, architecture)) {
+    if (!supportsArchitecture(versionChain, architecture)) {
       return undefined
     }
     return find(versionChain, Boolean)
@@ -197,8 +225,7 @@ export function useLightweightCloudProfile (cloudProfileRef, namespace, options 
   function getMachineImageVersionProperty (imageName, version, architecture, path) {
     const sources = createMachineImageVersionSources(resolveSpecs(), imageName)
     const versionChain = resolveMachineImageVersionChain(sources, version)
-    const sourceIndex = versionChain.findIndex(Boolean)
-    return getMachineImageVersionPropertyFromChain(versionChain, sourceIndex, architecture, path)
+    return getMachineImageVersionPropertyFromChain(versionChain, architecture, path)
   }
 
   function someMachineImageVersion (imageName, architecture, predicate) {
@@ -211,14 +238,13 @@ export function useLightweightCloudProfile (cloudProfileRef, namespace, options 
         }
         seen.add(version.version)
         const versionChain = resolveMachineImageVersionChain(sources, version.version)
-        const sourceIndex = versionChain.findIndex(Boolean)
-        if (sourceIndex === -1 || !supportsArchitecture(versionChain, sourceIndex, architecture)) {
+        if (!supportsArchitecture(versionChain, architecture)) {
           continue
         }
         // The predicate receives the exact item and a targeted property
         // resolver as its third argument; no effective item is synthesized.
         const getProperty = path => {
-          return getMachineImageVersionPropertyFromChain(versionChain, sourceIndex, architecture, path)
+          return getMachineImageVersionPropertyFromChain(versionChain, architecture, path)
         }
         if (predicate(version, image, getProperty)) {
           return true

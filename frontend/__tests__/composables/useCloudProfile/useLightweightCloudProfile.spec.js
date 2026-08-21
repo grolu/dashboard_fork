@@ -211,6 +211,12 @@ describe('composables', () => {
         'classification',
       )).toBe(parentVersion.classification)
 
+      delete namespacedVersion.expirationDate
+      expect(lookups.getKubernetesVersionProperty(
+        namespacedVersion.version,
+        'expirationDate',
+      )).toBeUndefined()
+
       const candidates = []
       expect(lookups.someKubernetesVersion((version, getProperty) => {
         candidates.push({
@@ -334,17 +340,17 @@ describe('composables', () => {
       )).toEqual(namespacedVersion)
     })
 
-    it('does not expose a parent image version for architectures explicitly excluded locally', () => {
+    it('does not inherit parent properties for a structural image version override', () => {
       const parentVersion = {
         version: '2150.7.0',
         architectures: ['amd64', 'arm64'],
         classification: 'deprecated',
         expirationDate: '2026-09-30T23:59:59Z',
+        cri: [{ name: 'containerd' }],
       }
       const namespacedVersion = {
         version: parentVersion.version,
         architectures: ['amd64'],
-        expirationDate: '2026-12-31T23:59:59Z',
       }
       cloudProfileStore.setCloudProfiles([
         createCloudProfile('parent', {
@@ -379,6 +385,24 @@ describe('composables', () => {
         'expirationDate',
       )).toBeUndefined()
       expect(lookups.someMachineImageVersion(parentMachineImage.name, 'arm64', () => true)).toBe(false)
+      expect(lookups.getMachineImageVersionProperty(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'amd64',
+        'expirationDate',
+      )).toBeUndefined()
+      expect(lookups.getMachineImageVersionProperty(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'amd64',
+        'classification',
+      )).toBeUndefined()
+      expect(lookups.getMachineImageVersionProperty(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'amd64',
+        'cri',
+      )).toBeUndefined()
 
       namespacedVersion.architectures = ['arm64']
       expect(toRaw(lookups.findMachineImageVersion(
@@ -391,13 +415,13 @@ describe('composables', () => {
         namespacedVersion.version,
         'arm64',
         'classification',
-      )).toBe(parentVersion.classification)
+      )).toBeUndefined()
       expect(lookups.getMachineImageVersionProperty(
         parentMachineImage.name,
         namespacedVersion.version,
         'arm64',
         'expirationDate',
-      )).toBe(namespacedVersion.expirationDate)
+      )).toBeUndefined()
       expect(lookups.someMachineImageVersion(parentMachineImage.name, 'arm64', () => true)).toBe(true)
 
       namespacedVersion.architectures = []
@@ -410,6 +434,24 @@ describe('composables', () => {
         parentMachineImage.name,
         namespacedVersion.version,
         'arm64',
+      )).toEqual(namespacedVersion)
+      expect(lookups.getMachineImageVersionProperty(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'amd64',
+        'classification',
+      )).toBe(parentVersion.classification)
+      expect(toRaw(lookups.getMachineImageVersionProperty(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'arm64',
+        'cri',
+      ))).toEqual(parentVersion.cri)
+      expect(lookups.getMachineImageVersionProperty(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'amd64',
+        'expirationDate',
       )).toBeUndefined()
     })
 

@@ -214,6 +214,36 @@ describe('composables', () => {
       }
     })
 
+    it('does not inherit cleared expirations into lightweight warnings', () => {
+      cloudProfileStore.setNamespacedCloudProfileDescriptors([
+        createDescriptor({
+          kubernetes: {
+            versions: [{
+              version: currentKubernetesVersion.version,
+            }],
+          },
+          machineImages: [{
+            name: 'gardenlinux',
+            versions: [{
+              version: currentMachineImageVersion.version,
+              architectures: ['amd64', 'arm64'],
+              classification: 'supported',
+            }],
+          }],
+        }),
+      ])
+
+      for (const architecture of ['amd64', 'arm64']) {
+        const warnings = createWarnings(
+          { kind: 'NamespacedCloudProfile', name: 'custom' },
+          architecture,
+        )
+
+        expect(warnings.kubernetesWarning.value).toBeUndefined()
+        expect(warnings.imageWarnings.value).toEqual([])
+      }
+    })
+
     it('uses a local image update strategy for parent-only version candidates', () => {
       const cloudProfile = createCloudProfile()
       cloudProfile.spec.machineImages = [{
