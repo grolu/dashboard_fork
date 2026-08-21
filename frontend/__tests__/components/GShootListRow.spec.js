@@ -71,6 +71,30 @@ function createDescriptor (namespace, classification, name = 'shared') {
   }
 }
 
+function createSparseDescriptor (namespace, name = 'sparse') {
+  return {
+    apiVersion: 'core.gardener.cloud/v1beta1',
+    kind: 'NamespacedCloudProfile',
+    metadata: {
+      name,
+      namespace,
+    },
+    spec: {
+      parent: {
+        kind: 'CloudProfile',
+        name: 'parent',
+      },
+      machineImages: [{
+        name: 'gardenlinux',
+        versions: [{
+          version: '1877.0.0',
+          expirationDate: '2026-12-31T23:59:59Z',
+        }],
+      }],
+    },
+  }
+}
+
 function createShoot (namespace, cloudProfileRef) {
   return {
     apiVersion: 'core.gardener.cloud/v1beta1',
@@ -116,6 +140,7 @@ describe('components', () => {
         createDescriptor('garden-a', 'supported'),
         createDescriptor('garden-b', 'deprecated'),
         createDescriptor('garden-c', undefined, 'fallback'),
+        createSparseDescriptor('garden-d'),
       ])
       statusSpy = vi.spyOn(api, 'getNamespacedCloudProfileStatus')
     })
@@ -141,6 +166,7 @@ describe('components', () => {
       ['NamespacedCloudProfile override', 'garden-a', { kind: 'NamespacedCloudProfile', name: 'shared' }, false],
       ['NamespacedCloudProfile parent fallback', 'garden-c', { kind: 'NamespacedCloudProfile', name: 'fallback' }, true],
       ['namespace-qualified duplicate', 'garden-b', { kind: 'NamespacedCloudProfile', name: 'shared' }, true],
+      ['sparse NamespacedCloudProfile override', 'garden-d', { kind: 'NamespacedCloudProfile', name: 'sparse' }, true],
     ])('renders a %s row from lightweight data', (label, namespace, cloudProfileRef, expectedWarning) => {
       const wrapper = renderRow(namespace, cloudProfileRef)
 

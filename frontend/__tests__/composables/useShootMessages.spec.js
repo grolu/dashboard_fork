@@ -22,7 +22,7 @@ const currentKubernetesVersion = {
 }
 const currentMachineImageVersion = {
   version: '1877.0.0',
-  architectures: ['amd64'],
+  architectures: ['amd64', 'arm64'],
   classification: 'deprecated',
   expirationDate: '2026-08-25T23:59:59Z',
 }
@@ -91,7 +91,7 @@ describe('composables', () => {
       vi.useRealTimers()
     })
 
-    function createWarnings (cloudProfileRef) {
+    function createWarnings (cloudProfileRef, architecture = 'amd64', imageAutoPatch = false) {
       const lookups = useLightweightCloudProfile(
         ref(cloudProfileRef),
         ref('garden-a'),
@@ -105,12 +105,13 @@ describe('composables', () => {
       const imageWarnings = useExpiringWorkerGroups(ref([{
         name: 'worker',
         machine: {
+          architecture,
           image: {
             name: 'gardenlinux',
             version: '1877.0.0',
           },
         },
-      }]), ref(false))
+      }]), ref(imageAutoPatch))
       return {
         kubernetesWarning,
         imageWarnings,
@@ -168,6 +169,82 @@ describe('composables', () => {
       const warnings = createWarnings({ kind: 'NamespacedCloudProfile', name: 'custom' })
 
       expect(warnings.kubernetesWarning.value).toBeUndefined()
+      expect(warnings.imageWarnings.value).toEqual([])
+    })
+
+    it('uses local expirations and inherited classifications for sparse version overrides', () => {
+      const expirationDate = '2026-08-24T23:59:59Z'
+      const kubernetesExpirationDate = '2026-08-23T23:59:59Z'
+      cloudProfileStore.setNamespacedCloudProfileDescriptors([
+        createDescriptor({
+          kubernetes: {
+            versions: [{
+              version: currentKubernetesVersion.version,
+              expirationDate: kubernetesExpirationDate,
+            }],
+          },
+          machineImages: [{
+            name: 'gardenlinux',
+            versions: [{
+              version: currentMachineImageVersion.version,
+              expirationDate,
+            }],
+          }],
+        }),
+      ])
+
+      for (const architecture of ['amd64', 'arm64']) {
+        const warnings = createWarnings(
+          { kind: 'NamespacedCloudProfile', name: 'custom' },
+          architecture,
+        )
+
+        expect(warnings.imageWarnings.value).toEqual([
+          expect.objectContaining({
+            version: currentMachineImageVersion.version,
+            classification: currentMachineImageVersion.classification,
+            expirationDate,
+            isDeprecated: true,
+          }),
+        ])
+        expect(warnings.kubernetesWarning.value).toMatchObject({
+          version: currentKubernetesVersion.version,
+          expirationDate: kubernetesExpirationDate,
+        })
+      }
+    })
+
+    it('uses a local image update strategy for parent-only version candidates', () => {
+      const cloudProfile = createCloudProfile()
+      cloudProfile.spec.machineImages = [{
+        name: 'gardenlinux',
+        updateStrategy: 'major',
+        versions: [{
+          ...currentMachineImageVersion,
+          expirationDate: '2027-08-25T23:59:59Z',
+        }, {
+          version: '1877.1.0',
+          architectures: ['amd64'],
+          classification: 'supported',
+        }],
+      }]
+      cloudProfileStore.setCloudProfiles([cloudProfile])
+      cloudProfileStore.setNamespacedCloudProfileDescriptors([
+        createDescriptor({
+          machineImages: [{
+            name: 'gardenlinux',
+            updateStrategy: 'patch',
+            versions: [{ version: currentMachineImageVersion.version }],
+          }],
+        }),
+      ])
+
+      const warnings = createWarnings(
+        { kind: 'NamespacedCloudProfile', name: 'custom' },
+        'amd64',
+        true,
+      )
+
       expect(warnings.imageWarnings.value).toEqual([])
     })
 

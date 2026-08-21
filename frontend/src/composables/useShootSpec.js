@@ -88,20 +88,35 @@ export function useShootSpec (shootItem, options = {}) {
 
   const {
     findKubernetesVersion,
+    getKubernetesVersionProperty,
     someKubernetesVersion,
   } = useLightweightCloudProfile(shootCloudProfileRef, shootNamespace, {
     cloudProfileStore,
   })
 
+  function decorateLightweightKubernetesVersion (version, propertyLookup) {
+    if (!version) {
+      return undefined
+    }
+    const getProperty = propertyLookup ?? (path => {
+      return getKubernetesVersionProperty(version.version, path)
+    })
+    return addClassificationHelpers({
+      ...version,
+      classification: getProperty('classification'),
+      expirationDate: getProperty('expirationDate'),
+    })
+  }
+
   function hasLightweightKubernetesUpdate (predicate = () => true) {
     if (!semver.valid(shootK8sVersion.value)) {
       return false
     }
-    return someKubernetesVersion(version => {
+    return someKubernetesVersion((version, getProperty) => {
       if (!semver.valid(version.version) || !semver.gt(version.version, shootK8sVersion.value)) {
         return false
       }
-      const decoratedVersion = addClassificationHelpers(version)
+      const decoratedVersion = decorateLightweightKubernetesVersion(version, getProperty)
       return !decoratedVersion.isExpired && predicate(decoratedVersion)
     })
   }
@@ -125,7 +140,7 @@ export function useShootSpec (shootItem, options = {}) {
   const shootKubernetesVersionObject = computed(() => {
     const version = findKubernetesVersion(shootK8sVersion.value)
     return version
-      ? addClassificationHelpers(version)
+      ? decorateLightweightKubernetesVersion(version)
       : {}
   })
 

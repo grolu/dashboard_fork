@@ -136,6 +136,10 @@ describe('composables', () => {
       const lookups = createNamespacedLookups(descriptor)
 
       expect(toRaw(lookups.findKubernetesVersion(parentKubernetesVersion.version))).toBe(parentKubernetesVersion)
+      expect(lookups.getKubernetesVersionProperty(
+        parentKubernetesVersion.version,
+        'classification',
+      )).toBe(parentKubernetesVersion.classification)
       expect(toRaw(lookups.findMachineType(parentMachineType.name))).toBe(parentMachineType)
       expect(toRaw(lookups.findVolumeType(parentVolumeType.name))).toBe(parentVolumeType)
       expect(toRaw(lookups.findMachineImage(parentMachineImage.name))).toBe(parentMachineImage)
@@ -144,6 +148,12 @@ describe('composables', () => {
         parentMachineImageVersion.version,
         'amd64',
       ))).toBe(parentMachineImageVersion)
+      expect(lookups.getMachineImageVersionProperty(
+        parentMachineImage.name,
+        parentMachineImageVersion.version,
+        'amd64',
+        'classification',
+      )).toBe(parentMachineImageVersion.classification)
       expect(toRaw(lookups.findRegion(parentRegion.name))).toBe(parentRegion)
       expect(toRaw(lookups.findZone(parentRegion.name, parentZone.name))).toBe(parentZone)
       expect(lookups.getProviderType()).toBe('aws')
@@ -168,6 +178,51 @@ describe('composables', () => {
         name: 'shared-large',
         cpu: '2',
       })
+    })
+
+    it('resolves properties of a sparse Kubernetes version independently without merging the item', () => {
+      const parentVersion = {
+        version: '1.32.1',
+        classification: 'deprecated',
+        expirationDate: '2026-09-30T23:59:59Z',
+      }
+      const namespacedVersion = {
+        version: parentVersion.version,
+        expirationDate: '2026-12-31T23:59:59Z',
+      }
+      cloudProfileStore.setCloudProfiles([
+        createCloudProfile('parent', {
+          ...parentSpec,
+          kubernetes: { versions: [parentVersion] },
+        }),
+      ])
+      const lookups = createNamespacedLookups(createNamespacedCloudProfile('garden-a', {
+        kubernetes: { versions: [namespacedVersion] },
+      }))
+
+      expect(toRaw(lookups.findKubernetesVersion(namespacedVersion.version))).toBe(namespacedVersion)
+      expect(lookups.findKubernetesVersion(namespacedVersion.version)).toEqual(namespacedVersion)
+      expect(lookups.getKubernetesVersionProperty(
+        namespacedVersion.version,
+        'expirationDate',
+      )).toBe(namespacedVersion.expirationDate)
+      expect(lookups.getKubernetesVersionProperty(
+        namespacedVersion.version,
+        'classification',
+      )).toBe(parentVersion.classification)
+
+      const candidates = []
+      expect(lookups.someKubernetesVersion((version, getProperty) => {
+        candidates.push({
+          version: toRaw(version),
+          classification: getProperty('classification'),
+        })
+        return false
+      })).toBe(false)
+      expect(candidates).toEqual([{
+        version: namespacedVersion,
+        classification: parentVersion.classification,
+      }])
     })
 
     it('falls through to an exact parent machine image version without merging image arrays', () => {
@@ -195,6 +250,167 @@ describe('composables', () => {
         parentMachineImageVersion.version,
         'amd64',
       ))).toBe(parentMachineImageVersion)
+    })
+
+    it('resolves properties of a sparse image version independently without merging the item', () => {
+      const parentVersion = {
+        version: '2150.7.0',
+        architectures: ['amd64', 'arm64'],
+        classification: 'deprecated',
+        expirationDate: '2026-09-30T23:59:59Z',
+        cri: [{ name: 'containerd' }],
+      }
+      const namespacedVersion = {
+        version: parentVersion.version,
+        expirationDate: '2026-12-31T23:59:59Z',
+      }
+      cloudProfileStore.setCloudProfiles([
+        createCloudProfile('parent', {
+          ...parentSpec,
+          machineImages: [{
+            name: parentMachineImage.name,
+            versions: [parentVersion],
+          }],
+        }),
+      ])
+      const descriptor = createNamespacedCloudProfile('garden-a', {
+        machineImages: [{
+          name: parentMachineImage.name,
+          versions: [namespacedVersion],
+        }],
+      })
+      const lookups = createNamespacedLookups(descriptor)
+
+      for (const architecture of ['amd64', 'arm64']) {
+        expect(toRaw(lookups.findMachineImageVersion(
+          parentMachineImage.name,
+          namespacedVersion.version,
+          architecture,
+        ))).toBe(namespacedVersion)
+        expect(lookups.getMachineImageVersionProperty(
+          parentMachineImage.name,
+          namespacedVersion.version,
+          architecture,
+          'expirationDate',
+        )).toBe(namespacedVersion.expirationDate)
+        expect(lookups.getMachineImageVersionProperty(
+          parentMachineImage.name,
+          namespacedVersion.version,
+          architecture,
+          'classification',
+        )).toBe(parentVersion.classification)
+        expect(toRaw(lookups.getMachineImageVersionProperty(
+          parentMachineImage.name,
+          namespacedVersion.version,
+          architecture,
+          'cri',
+        ))).toEqual(parentVersion.cri)
+
+        const candidates = []
+        expect(lookups.someMachineImageVersion(parentMachineImage.name, architecture, (version, image, getProperty) => {
+          candidates.push({
+            version: toRaw(version),
+            image: toRaw(image),
+            classification: getProperty('classification'),
+          })
+          return false
+        })).toBe(false)
+        expect(candidates).toEqual([{
+          version: namespacedVersion,
+          image: descriptor.spec.machineImages[0],
+          classification: parentVersion.classification,
+        }])
+      }
+
+      expect(lookups.findMachineImageVersion(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'ppc64le',
+      )).toBeUndefined()
+      expect(lookups.findMachineImageVersion(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'amd64',
+      )).toEqual(namespacedVersion)
+    })
+
+    it('does not expose a parent image version for architectures explicitly excluded locally', () => {
+      const parentVersion = {
+        version: '2150.7.0',
+        architectures: ['amd64', 'arm64'],
+        classification: 'deprecated',
+        expirationDate: '2026-09-30T23:59:59Z',
+      }
+      const namespacedVersion = {
+        version: parentVersion.version,
+        architectures: ['amd64'],
+        expirationDate: '2026-12-31T23:59:59Z',
+      }
+      cloudProfileStore.setCloudProfiles([
+        createCloudProfile('parent', {
+          ...parentSpec,
+          machineImages: [{
+            name: parentMachineImage.name,
+            versions: [parentVersion],
+          }],
+        }),
+      ])
+      const lookups = createNamespacedLookups(createNamespacedCloudProfile('garden-a', {
+        machineImages: [{
+          name: parentMachineImage.name,
+          versions: [namespacedVersion],
+        }],
+      }))
+
+      expect(toRaw(lookups.findMachineImageVersion(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'amd64',
+      ))).toBe(namespacedVersion)
+      expect(lookups.findMachineImageVersion(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'arm64',
+      )).toBeUndefined()
+      expect(lookups.getMachineImageVersionProperty(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'arm64',
+        'expirationDate',
+      )).toBeUndefined()
+      expect(lookups.someMachineImageVersion(parentMachineImage.name, 'arm64', () => true)).toBe(false)
+
+      namespacedVersion.architectures = ['arm64']
+      expect(toRaw(lookups.findMachineImageVersion(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'arm64',
+      ))).toBe(namespacedVersion)
+      expect(lookups.getMachineImageVersionProperty(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'arm64',
+        'classification',
+      )).toBe(parentVersion.classification)
+      expect(lookups.getMachineImageVersionProperty(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'arm64',
+        'expirationDate',
+      )).toBe(namespacedVersion.expirationDate)
+      expect(lookups.someMachineImageVersion(parentMachineImage.name, 'arm64', () => true)).toBe(true)
+
+      namespacedVersion.architectures = []
+      expect(toRaw(lookups.findMachineImageVersion(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'amd64',
+      ))).toBe(namespacedVersion)
+      expect(lookups.findMachineImageVersion(
+        parentMachineImage.name,
+        namespacedVersion.version,
+        'arm64',
+      )).toBeUndefined()
     })
 
     it('evaluates effective version candidates without allowing parent duplicates to override local values', () => {
@@ -300,10 +516,17 @@ describe('composables', () => {
       const lookups = createNamespacedLookups(createNamespacedCloudProfile('garden-a'))
 
       expect(lookups.findKubernetesVersion('0.0.0')).toBeUndefined()
+      expect(lookups.getKubernetesVersionProperty('0.0.0', 'classification')).toBeUndefined()
       expect(lookups.findMachineType('missing')).toBeUndefined()
       expect(lookups.findVolumeType('missing')).toBeUndefined()
       expect(lookups.findMachineImage('missing')).toBeUndefined()
       expect(lookups.findMachineImageVersion('gardenlinux', '0.0.0', 'amd64')).toBeUndefined()
+      expect(lookups.getMachineImageVersionProperty(
+        'gardenlinux',
+        '0.0.0',
+        'amd64',
+        'classification',
+      )).toBeUndefined()
       expect(lookups.findRegion('missing')).toBeUndefined()
       expect(lookups.findZone('eu-west-1', 'missing')).toBeUndefined()
     })

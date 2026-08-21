@@ -260,7 +260,11 @@ describe('composables', () => {
         spec: {
           kubernetes: {
             versions: [
-              { version: '1.32.1', classification: 'deprecated' },
+              {
+                version: '1.32.1',
+                classification: 'deprecated',
+                expirationDate: '2026-09-30T23:59:59Z',
+              },
               { version: '1.33.0', classification: 'supported' },
             ],
           },
@@ -276,8 +280,11 @@ describe('composables', () => {
           parent: { kind: 'CloudProfile', name: 'parent' },
           kubernetes: {
             versions: [
-              { version: '1.32.1', classification: 'supported' },
-              { version: '1.32.2', classification: 'supported' },
+              {
+                version: '1.32.1',
+                expirationDate: '2026-12-31T23:59:59Z',
+              },
+              { version: '1.32.2' },
             ],
           },
         },
@@ -290,7 +297,8 @@ describe('composables', () => {
 
       expect(reactiveShootItem.shootKubernetesVersionObject).toMatchObject({
         version: '1.32.1',
-        classification: 'supported',
+        classification: 'deprecated',
+        expirationDate: '2026-12-31T23:59:59Z',
       })
       expect(reactiveShootItem.shootKubernetesUpdateAvailable).toBe(true)
       expect(reactiveShootItem.shootSupportedPatchAvailable).toBe(true)

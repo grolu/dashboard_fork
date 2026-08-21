@@ -66,35 +66,75 @@ export function useLightweightCloudProfile (cloudProfileRef, namespace, options 
     return undefined
   }
 
-  function someWithFallback (lookup, identity, predicate) {
-    // Evaluate local and parent sources in precedence order without building an
-    // effective collection. A local identity shadows the same parent identity.
+  function createVersionIndex (versions) {
+    const versionsByVersion = new Map()
+    for (const version of versions ?? []) {
+      if (!versionsByVersion.has(version.version)) {
+        versionsByVersion.set(version.version, version)
+      }
+    }
+    return versionsByVersion
+  }
+
+  function createKubernetesVersionSources (specs) {
+    return specs.map(spec => {
+      const versions = get(spec, ['kubernetes', 'versions']) ?? []
+      return {
+        versions,
+        versionsByVersion: createVersionIndex(versions),
+      }
+    })
+  }
+
+  function resolveVersionChain (sources, version) {
+    return sources.map(source => source.versionsByVersion.get(version))
+  }
+
+  function getVersionPropertyFromChain (versionChain, path) {
+    const sourceIndex = versionChain.findIndex(Boolean)
+    if (sourceIndex === -1) {
+      return undefined
+    }
+    for (const item of versionChain.slice(sourceIndex)) {
+      const value = get(item, path)
+      if (value !== undefined) {
+        return value
+      }
+    }
+    return undefined
+  }
+
+  function findKubernetesVersion (version) {
+    const sources = createKubernetesVersionSources(resolveSpecs())
+    return find(resolveVersionChain(sources, version), Boolean)
+  }
+
+  // Resolve one property by version identity. Only undefined values fall
+  // through; the version objects themselves remain exact and unmerged.
+  function getKubernetesVersionProperty (version, path) {
+    const sources = createKubernetesVersionSources(resolveSpecs())
+    return getVersionPropertyFromChain(resolveVersionChain(sources, version), path)
+  }
+
+  function someKubernetesVersion (predicate) {
+    const sources = createKubernetesVersionSources(resolveSpecs())
     const seen = new Set()
-    for (const spec of resolveSpecs()) {
-      for (const item of lookup(spec) ?? []) {
-        const key = identity(item)
-        if (seen.has(key)) {
+    for (const { versions } of sources) {
+      for (const version of versions) {
+        if (seen.has(version.version)) {
           continue
         }
-        seen.add(key)
-        if (predicate(item)) {
+        seen.add(version.version)
+        const versionChain = resolveVersionChain(sources, version.version)
+        // Keep the predicate item exact; callers request inherited properties
+        // explicitly through the second argument.
+        const getProperty = path => getVersionPropertyFromChain(versionChain, path)
+        if (predicate(version, getProperty)) {
           return true
         }
       }
     }
     return false
-  }
-
-  function findKubernetesVersion (version) {
-    return findWithFallback(spec => find(get(spec, ['kubernetes', 'versions']), { version }))
-  }
-
-  function someKubernetesVersion (predicate) {
-    return someWithFallback(
-      spec => get(spec, ['kubernetes', 'versions']),
-      item => item.version,
-      predicate,
-    )
   }
 
   function findMachineType (name) {
@@ -109,34 +149,83 @@ export function useLightweightCloudProfile (cloudProfileRef, namespace, options 
     return findWithFallback(spec => find(get(spec, ['machineImages']), { name }))
   }
 
-  function findMachineImageVersion (imageName, version, architecture) {
-    return findWithFallback(spec => {
+  // A NamespacedCloudProfile may override only selected properties of a
+  // parent image version. Keep the returned version object exact, but resolve
+  // individual properties through the matching version identity.
+  function createMachineImageVersionSources (specs, imageName) {
+    return specs.map(spec => {
       const image = find(get(spec, ['machineImages']), { name: imageName })
-      return find(image?.versions, item => {
-        const architectures = item.architectures?.length
-          ? item.architectures
-          : ['amd64']
-        return item.version === version && architectures.includes(architecture)
-      })
+      const versionsByVersion = createVersionIndex(image?.versions)
+      return { image, versionsByVersion }
     })
   }
 
+  function resolveMachineImageVersionChain (sources, version) {
+    return resolveVersionChain(sources, version)
+  }
+
+  function supportsArchitecture (versionChain, sourceIndex, architecture) {
+    let architectures
+    for (const item of versionChain.slice(sourceIndex)) {
+      const candidateArchitectures = item?.architectures
+      if (candidateArchitectures !== undefined) {
+        architectures = candidateArchitectures
+        break
+      }
+    }
+    architectures = architectures?.length ? architectures : ['amd64']
+    return architectures.includes(architecture)
+  }
+
+  function getMachineImageVersionPropertyFromChain (versionChain, sourceIndex, architecture, path) {
+    if (sourceIndex === -1 || !supportsArchitecture(versionChain, sourceIndex, architecture)) {
+      return undefined
+    }
+    return getVersionPropertyFromChain(versionChain, path)
+  }
+
+  function findMachineImageVersion (imageName, version, architecture) {
+    const sources = createMachineImageVersionSources(resolveSpecs(), imageName)
+    const versionChain = resolveMachineImageVersionChain(sources, version)
+    const sourceIndex = versionChain.findIndex(Boolean)
+    if (sourceIndex === -1 || !supportsArchitecture(versionChain, sourceIndex, architecture)) {
+      return undefined
+    }
+    return find(versionChain, Boolean)
+  }
+
+  function getMachineImageVersionProperty (imageName, version, architecture, path) {
+    const sources = createMachineImageVersionSources(resolveSpecs(), imageName)
+    const versionChain = resolveMachineImageVersionChain(sources, version)
+    const sourceIndex = versionChain.findIndex(Boolean)
+    return getMachineImageVersionPropertyFromChain(versionChain, sourceIndex, architecture, path)
+  }
+
   function someMachineImageVersion (imageName, architecture, predicate) {
-    return someWithFallback(
-      spec => {
-        const image = find(get(spec, ['machineImages']), { name: imageName })
-        return image?.versions
-          ?.filter(version => {
-            const architectures = version.architectures?.length
-              ? version.architectures
-              : ['amd64']
-            return architectures.includes(architecture)
-          })
-          .map(version => ({ image, version }))
-      },
-      item => item.version.version,
-      ({ image, version }) => predicate(version, image),
-    )
+    const sources = createMachineImageVersionSources(resolveSpecs(), imageName)
+    const seen = new Set()
+    for (const { image } of sources) {
+      for (const version of image?.versions ?? []) {
+        if (seen.has(version.version)) {
+          continue
+        }
+        seen.add(version.version)
+        const versionChain = resolveMachineImageVersionChain(sources, version.version)
+        const sourceIndex = versionChain.findIndex(Boolean)
+        if (sourceIndex === -1 || !supportsArchitecture(versionChain, sourceIndex, architecture)) {
+          continue
+        }
+        // The predicate receives the exact item and a targeted property
+        // resolver as its third argument; no effective item is synthesized.
+        const getProperty = path => {
+          return getMachineImageVersionPropertyFromChain(versionChain, sourceIndex, architecture, path)
+        }
+        if (predicate(version, image, getProperty)) {
+          return true
+        }
+      }
+    }
+    return false
   }
 
   function getMachineImageUpdateStrategy (imageName) {
@@ -186,11 +275,13 @@ export function useLightweightCloudProfile (cloudProfileRef, namespace, options 
 
   return {
     findKubernetesVersion,
+    getKubernetesVersionProperty,
     someKubernetesVersion,
     findMachineType,
     findVolumeType,
     findMachineImage,
     findMachineImageVersion,
+    getMachineImageVersionProperty,
     someMachineImageVersion,
     getMachineImageUpdateStrategy,
     findRegion,

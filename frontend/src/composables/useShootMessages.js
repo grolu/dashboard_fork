@@ -33,13 +33,29 @@ import get from 'lodash/get'
 export function useShootMessages (lightweightCloudProfile) {
   const {
     findKubernetesVersion,
+    getKubernetesVersionProperty,
     someKubernetesVersion,
     findMachineImageVersion,
+    getMachineImageVersionProperty,
     someMachineImageVersion,
     getMachineImageUpdateStrategy,
   } = lightweightCloudProfile
 
-  function decorateMachineImageVersion (name, imageVersion) {
+  function decorateKubernetesVersion (version, propertyLookup) {
+    if (!version) {
+      return undefined
+    }
+    const getProperty = propertyLookup ?? (path => {
+      return getKubernetesVersionProperty(version.version, path)
+    })
+    return addClassificationHelpers({
+      ...version,
+      classification: getProperty('classification'),
+      expirationDate: getProperty('expirationDate'),
+    })
+  }
+
+  function decorateMachineImageVersion (name, architecture, imageVersion, propertyLookup, updateStrategy) {
     if (!imageVersion?.version) {
       return undefined
     }
@@ -49,12 +65,17 @@ export function useShootMessages (lightweightCloudProfile) {
     if (!version) {
       return undefined
     }
+    const getProperty = propertyLookup ?? (path => {
+      return getMachineImageVersionProperty(name, imageVersion.version, architecture, path)
+    })
     return addClassificationHelpers({
       ...imageVersion,
       name,
       vendorName: name,
       version,
-      updateStrategy: getMachineImageUpdateStrategy(name) ?? 'major',
+      classification: getProperty('classification'),
+      expirationDate: getProperty('expirationDate'),
+      updateStrategy: updateStrategy ?? getMachineImageUpdateStrategy(name) ?? 'major',
     })
   }
 
@@ -69,9 +90,9 @@ export function useShootMessages (lightweightCloudProfile) {
         return undefined
       }
 
-      const version = addClassificationHelpers(plainVersion)
-      const patchAvailable = someKubernetesVersion(candidate => {
-        const decoratedCandidate = addClassificationHelpers(candidate)
+      const version = decorateKubernetesVersion(plainVersion)
+      const patchAvailable = someKubernetesVersion((candidate, getProperty) => {
+        const decoratedCandidate = decorateKubernetesVersion(candidate, getProperty)
         return semver.valid(candidate.version) &&
           decoratedCandidate.isSupported &&
           semver.diff(candidate.version, version.version) === 'patch' &&
@@ -81,7 +102,7 @@ export function useShootMessages (lightweightCloudProfile) {
       const nextMinorVersion = semver.minor(version.version) + 1
       let hasNextMinorVersion = false
       let hasNewerSupportedMinorVersion = false
-      someKubernetesVersion(candidate => {
+      someKubernetesVersion((candidate, getProperty) => {
         if (!semver.valid(candidate.version)) {
           return false
         }
@@ -89,7 +110,7 @@ export function useShootMessages (lightweightCloudProfile) {
         if (minorVersion === nextMinorVersion) {
           hasNextMinorVersion = true
         }
-        if (minorVersion >= nextMinorVersion && addClassificationHelpers(candidate).isSupported) {
+        if (minorVersion >= nextMinorVersion && decorateKubernetesVersion(candidate, getProperty).isSupported) {
           hasNewerSupportedMinorVersion = true
         }
         return hasNextMinorVersion && hasNewerSupportedMinorVersion
@@ -134,21 +155,46 @@ export function useShootMessages (lightweightCloudProfile) {
         const { name, version } = workerImage
         const architecture = get(worker, ['machine', 'architecture'], 'amd64')
         const plainWorkerImageVersion = findMachineImageVersion(name, version, architecture)
-        const workerImageDetails = decorateMachineImageVersion(name, plainWorkerImageVersion)
+        const updateStrategy = getMachineImageUpdateStrategy(name) ?? 'major'
+        const workerImageDetails = decorateMachineImageVersion(
+          name,
+          architecture,
+          plainWorkerImageVersion,
+          undefined,
+          updateStrategy,
+        )
         if (!workerImageDetails) {
           return undefined
         }
 
-        const updateAvailableForUpdateStrategy = someMachineImageVersion(name, architecture, candidate => {
-          const candidateDetails = decorateMachineImageVersion(name, candidate)
+        const updateAvailableForUpdateStrategy = someMachineImageVersion(name, architecture, (candidate, image, getProperty) => {
+          const candidateDetails = decorateMachineImageVersion(
+            image.name,
+            architecture,
+            candidate,
+            getProperty,
+            updateStrategy,
+          )
           return candidateDetails && machineImageHasUpdateForAutoUpdateStrategy(workerImageDetails, [candidateDetails])
         })
-        const updateAvailable = someMachineImageVersion(name, architecture, candidate => {
-          const candidateDetails = decorateMachineImageVersion(name, candidate)
+        const updateAvailable = someMachineImageVersion(name, architecture, (candidate, image, getProperty) => {
+          const candidateDetails = decorateMachineImageVersion(
+            image.name,
+            architecture,
+            candidate,
+            getProperty,
+            updateStrategy,
+          )
           return candidateDetails && machineImageHasUpdate(workerImageDetails, [candidateDetails])
         })
-        const supportedVersionAvailable = someMachineImageVersion(name, architecture, candidate => {
-          const candidateDetails = decorateMachineImageVersion(name, candidate)
+        const supportedVersionAvailable = someMachineImageVersion(name, architecture, (candidate, image, getProperty) => {
+          const candidateDetails = decorateMachineImageVersion(
+            image.name,
+            architecture,
+            candidate,
+            getProperty,
+            updateStrategy,
+          )
           return candidateDetails && machineVendorHasSupportedVersion(workerImageDetails, [candidateDetails])
         })
         const expirationWarning = getVersionExpirationWarning({

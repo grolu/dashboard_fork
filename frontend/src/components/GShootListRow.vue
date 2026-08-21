@@ -359,7 +359,10 @@ const seedItem = computed(() => seedStore.seedByName(shootSeedName.value))
 useProvideSeedItem(seedItem)
 useProvideManagedSeedShoot(shootSeedName)
 
-const { findMachineImageVersion } = useLightweightCloudProfile(
+const {
+  findMachineImageVersion,
+  getMachineImageVersionProperty,
+} = useLightweightCloudProfile(
   shootCloudProfileRef,
   shootNamespace,
   { cloudProfileStore },
@@ -455,9 +458,18 @@ const hasShootWorkerGroupWarning = computed(() => {
     const { name, version } = get(workerGroup, ['machine', 'image'], {})
     const architecture = get(workerGroup, ['machine', 'architecture'], 'amd64')
     const machineImageVersion = findMachineImageVersion(name, version, architecture)
-    return machineImageVersion
-      ? addClassificationHelpers(machineImageVersion).isDeprecated
-      : false
+    if (!machineImageVersion) {
+      return false
+    }
+    return addClassificationHelpers({
+      ...machineImageVersion,
+      classification: getMachineImageVersionProperty(
+        name,
+        version,
+        architecture,
+        'classification',
+      ),
+    }).isDeprecated
   })
 })
 

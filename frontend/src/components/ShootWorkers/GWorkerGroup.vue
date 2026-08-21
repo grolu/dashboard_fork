@@ -406,6 +406,7 @@ export default {
     const configStore = useConfigStore()
     const {
       findMachineImageVersion,
+      getMachineImageVersionProperty,
       findMachineType,
       findVolumeType,
     } = useLightweightCloudProfile(shootCloudProfileRef, shootNamespace, {
@@ -420,6 +421,7 @@ export default {
       shootCloudProfileRef,
       configStore,
       findMachineImageVersion,
+      getMachineImageVersionProperty,
       findMachineType,
       findVolumeType,
     }
@@ -487,6 +489,18 @@ export default {
         name,
         displayName: vendor.displayName || name,
         icon: vendor.icon,
+        classification: this.getMachineImageVersionProperty(
+          name,
+          version,
+          architecture,
+          'classification',
+        ),
+        expirationDate: this.getMachineImageVersionProperty(
+          name,
+          version,
+          architecture,
+          'expirationDate',
+        ),
       })
     },
     machineCri () {
